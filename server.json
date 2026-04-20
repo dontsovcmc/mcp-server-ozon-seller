@@ -1,0 +1,33 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.dontsovcmc/ozon-seller",
+  "description": "MCP server for Ozon Seller API — FBS orders, labels, shipping",
+  "repository": {
+    "url": "https://github.com/dontsovcmc/mcp-server-ozon-seller",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "mcp-server-ozon-seller",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeHint": "uvx",
+      "environmentVariables": [
+        {
+          "name": "OZON_CLIENT_ID",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "OZON_API_KEY",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
