@@ -6,12 +6,12 @@
     "url": "https://github.com/dontsovcmc/mcp-server-ozon-seller",
     "source": "github"
   },
-  "version": "1.0.0",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mcp-server-ozon-seller",
-      "version": "1.0.0",
+      "version": "0.2.0",
       "transport": {
         "type": "stdio"
       },

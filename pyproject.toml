@@ -1,6 +1,6 @@
 [project]
 name = "mcp-server-ozon-seller"
-version = "1.0.0"
+version = "0.2.0"
 description = "MCP server for Ozon Seller API — products, FBS/FBO, finance, analytics, returns"
 readme = "README.md"
 license = {text = "MIT"}

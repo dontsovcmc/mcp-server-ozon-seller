@@ -2,7 +2,7 @@
 
 # mcp-server-ozon-seller
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/dontsovcmc/mcp-server-ozon-seller)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/dontsovcmc/mcp-server-ozon-seller)
 
 MCP-сервер для Ozon Seller API. Полное покрытие API: товары, заказы FBS/FBO, финансы, аналитика, возвраты, чаты, акции, отзывы и многое другое.
 
