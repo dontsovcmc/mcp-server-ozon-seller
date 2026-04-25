@@ -28,9 +28,10 @@ GitHub Actions: `.github/workflows/test.yml`, `runs-on: self-hosted`. Токен
 src/mcp_server_ozon_seller/
 ├── __init__.py     # main(), версия
 ├── __main__.py     # python -m entry point
-├── server.py       # FastMCP, все tools
-├── ozon_api.py     # HTTP-клиент Ozon Seller API
-└── cli.py          # CLI entry point (argparse, subcommands)
+├── server.py       # FastMCP, все tools (~120 tools)
+├── ozon_api.py     # HTTP-клиент Ozon Seller API (~120 методов)
+├── models.py       # Pydantic-модели для валидации в тестах
+└── cli.py          # CLI entry point (argparse, ~80 subcommands)
 ```
 
 ### Ozon Seller API
@@ -72,3 +73,4 @@ src/mcp_server_ozon_seller/
 - stdout в MCP сервере занят JSON-RPC — для логов использовать только stderr.
 - **ПЕРЕД КАЖДЫМ КОММИТОМ** проверять все исходные файлы, тесты и документацию на наличие реальных персональных данных (ИНН, номера счетов, имена, адреса, телефоны, email). Заменять на вымышленные.
 - **В КАЖДОМ PR** обновлять версию в `pyproject.toml` и `src/mcp_server_ozon_seller/__init__.py` (patch для фиксов, minor для новых фич).
+- **ПЕРЕД публикацией в MCP-реестр** обязательно запускать `mcp-publisher validate` — проверяет `server.json` на соответствие схеме реестра (лимиты длины полей и т.д.).
