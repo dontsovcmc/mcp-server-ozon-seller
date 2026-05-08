@@ -14,36 +14,43 @@ BASE_URL = "https://api-seller.ozon.ru"
 class OzonSellerAPI:
     """Синхронный клиент Ozon Seller API."""
 
-    def __init__(self, client_id: str, api_key: str):
+    def __init__(self, client_id: str, api_key: str,
+                 timeout: int = 30, file_timeout: int = 60):
         self.session = requests.Session()
         self.session.headers.update({
             "Client-Id": client_id,
             "Api-Key": api_key,
             "Content-Type": "application/json",
         })
+        self.timeout = timeout
+        self.file_timeout = file_timeout
 
     # ── Base HTTP ──────────────────────────────────────────────────
 
     def _post(self, path: str, payload: dict, **kwargs) -> dict:
-        resp = self.session.post(f"{BASE_URL}{path}", json=payload, timeout=30, **kwargs)
+        resp = self.session.post(f"{BASE_URL}{path}", json=payload, timeout=self.timeout, **kwargs)
         if not resp.ok:
-            raise RuntimeError(f"POST {path} -> {resp.status_code}: {resp.text[:500]}")
+            log.debug("POST %s error body: %s", path, resp.text)
+            raise RuntimeError(f"POST {path} -> {resp.status_code}")
         return resp.json()
 
     def _post_binary(self, path: str, payload: dict, **kwargs) -> bytes:
-        resp = self.session.post(f"{BASE_URL}{path}", json=payload, timeout=30, **kwargs)
+        resp = self.session.post(f"{BASE_URL}{path}", json=payload, timeout=self.file_timeout, **kwargs)
         if not resp.ok:
-            raise RuntimeError(f"POST {path} -> {resp.status_code}: {resp.text[:500]}")
+            log.debug("POST %s error body: %s", path, resp.text)
+            raise RuntimeError(f"POST {path} -> {resp.status_code}")
         content_type = resp.headers.get("Content-Type", "")
         if not content_type.startswith("application/pdf"):
-            raise RuntimeError(f"POST {path} -> ожидался PDF, получен {content_type}: {resp.text[:300]}")
+            log.debug("POST %s unexpected content type body: %s", path, resp.text)
+            raise RuntimeError(f"POST {path} -> expected PDF, got {content_type}")
         return resp.content
 
     def _get(self, path: str, **kwargs) -> bytes:
         """GET-запрос, возвращает байты (для скачивания файлов)."""
-        resp = self.session.get(f"{BASE_URL}{path}", timeout=30, **kwargs)
+        resp = self.session.get(f"{BASE_URL}{path}", timeout=self.timeout, **kwargs)
         if not resp.ok:
-            raise RuntimeError(f"GET {path} -> {resp.status_code}: {resp.text[:500]}")
+            log.debug("GET %s error body: %s", path, resp.text)
+            raise RuntimeError(f"GET {path} -> {resp.status_code}")
         return resp.content
 
     # ── Products ───────────────────────────────────────────────────
@@ -318,29 +325,32 @@ class OzonSellerAPI:
 
     def fbs_act_pdf(self, id: int) -> bytes:
         """Скачать PDF акта."""
-        resp = self.session.post(f"{BASE_URL}/v2/posting/fbs/act/get-pdf", json={"id": id}, timeout=30)
+        resp = self.session.post(f"{BASE_URL}/v2/posting/fbs/act/get-pdf", json={"id": id}, timeout=self.file_timeout)
         if not resp.ok:
-            raise RuntimeError(f"POST /v2/posting/fbs/act/get-pdf -> {resp.status_code}: {resp.text[:500]}")
+            log.debug("POST /v2/posting/fbs/act/get-pdf error body: %s", resp.text)
+            raise RuntimeError(f"POST /v2/posting/fbs/act/get-pdf -> {resp.status_code}")
         return resp.content
 
     def fbs_digital_act_pdf(self, id: int, doc_type: str = "act_of_acceptance") -> bytes:
         """Скачать PDF электронного акта."""
         resp = self.session.post(
             f"{BASE_URL}/v2/posting/fbs/digital/act/get-pdf",
-            json={"id": id, "doc_type": doc_type}, timeout=30,
+            json={"id": id, "doc_type": doc_type}, timeout=self.file_timeout,
         )
         if not resp.ok:
-            raise RuntimeError(f"POST fbs/digital/act/get-pdf -> {resp.status_code}: {resp.text[:500]}")
+            log.debug("POST fbs/digital/act/get-pdf error body: %s", resp.text)
+            raise RuntimeError(f"POST fbs/digital/act/get-pdf -> {resp.status_code}")
         return resp.content
 
     def fbs_container_labels(self, id: int) -> bytes:
         """Этикетки для контейнера."""
         resp = self.session.post(
             f"{BASE_URL}/v2/posting/fbs/act/get-container-labels",
-            json={"id": id}, timeout=30,
+            json={"id": id}, timeout=self.file_timeout,
         )
         if not resp.ok:
-            raise RuntimeError(f"POST fbs/act/get-container-labels -> {resp.status_code}: {resp.text[:500]}")
+            log.debug("POST fbs/act/get-container-labels error body: %s", resp.text)
+            raise RuntimeError(f"POST fbs/act/get-container-labels -> {resp.status_code}")
         return resp.content
 
     def fbs_posting_delivered(self, posting_number: str) -> dict:

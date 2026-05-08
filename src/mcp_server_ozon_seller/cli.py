@@ -1,6 +1,7 @@
-"""CLI для Ozon Seller API.
+"""CLI for Ozon Seller API.
 
 Usage: ozon-seller-cli <command> [options]
+Without arguments starts MCP server (stdio transport).
 """
 
 import argparse
@@ -10,18 +11,20 @@ import sys
 import logging
 
 from . import __version__
-from . import server
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
 log = logging.getLogger(__name__)
 
-DEFAULT_LABELS_DIR = os.path.expanduser("~/.config/mcp-server-ozon-seller/labels")
+DEFAULT_LABELS_DIR = os.path.expanduser("~/mcp-server-ozon-seller/labels")
+DEFAULT_DOCS_DIR = os.path.expanduser("~/mcp-server-ozon-seller/docs")
+
+
+# ── Helpers ────────────────────────────────────────────────────────
 
 
 def _load_env(path: str) -> None:
-    """Простая загрузка .env без внешних зависимостей."""
+    """Load .env file without external dependencies."""
     if not os.path.exists(path):
-        raise FileNotFoundError(f"Файл окружения не найден: {path}")
+        raise FileNotFoundError(f"Env file not found: {path}")
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -33,380 +36,545 @@ def _load_env(path: str) -> None:
             key = key.strip()
             value = value.strip().strip("'\"")
             os.environ.setdefault(key, value)
-    log.info(f"Загружены переменные из {path}")
+    log.info("Loaded env from %s", path)
 
 
-# ── Entry point ─────────────────────────────────────────────────────
+def _load_json(raw: str) -> dict | list:
+    """Parse a JSON string, exit on error."""
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError) as exc:
+        print(f"Error: invalid JSON: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _j(data) -> str:
+    """Pretty-print data as JSON."""
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def _api():
+    """Create OzonSellerAPI from environment variables."""
+    from .ozon_api import OzonSellerAPI
+
+    client_id = os.getenv("OZON_CLIENT_ID")
+    api_key = os.getenv("OZON_API_KEY")
+    if not client_id or not api_key:
+        print(
+            "Error: OZON_CLIENT_ID and OZON_API_KEY environment variables are required",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    timeout = int(os.getenv("OZON_TIMEOUT", "30"))
+    file_timeout = int(os.getenv("OZON_FILE_TIMEOUT", "60"))
+    return OzonSellerAPI(client_id, api_key, timeout=timeout, file_timeout=file_timeout)
+
+
+def _download(data: bytes, path: str) -> str:
+    """Save binary data to file, return JSON with path and size."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(data)
+    return _j({"path": os.path.abspath(path), "size": len(data)})
+
+
+# ── Entry point ────────────────────────────────────────────────────
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="ozon-seller-cli",
-        description="Ozon Seller: MCP-сервер и CLI",
+        description="Ozon Seller: MCP server and CLI",
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--env", help="Путь к .env файлу")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}",
+        help="Show version and exit",
+    )
+    parser.add_argument("--env", help="Path to .env file")
 
     sub = parser.add_subparsers(dest="command")
 
-    # ── Legacy commands ────────────────────────────────────────────
-
-    p = sub.add_parser("list", help="Список несобранных FBS-заказов")
-    p.add_argument("--days", type=int, default=7)
-
-    p = sub.add_parser("labels", help="Скачать PDF-этикетки")
-    p.add_argument("--posting", nargs="*", help="Номера отправлений")
-    p.add_argument("--days", type=int, default=7)
-    p.add_argument("--output-dir", dest="output_dir", default=DEFAULT_LABELS_DIR)
-
-    p = sub.add_parser("ship", help="Собрать заказы")
-    p.add_argument("--posting", nargs="*", help="Номера отправлений")
-    p.add_argument("--all", action="store_true")
-    p.add_argument("--days", type=int, default=7)
-
     # ── Products ───────────────────────────────────────────────────
 
-    p = sub.add_parser("product-list", help="Список товаров")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--limit", type=int, default=100)
+    p = sub.add_parser("product-list", help="List products")
+    p.add_argument("--filter-json", default="{}", help="JSON filter: {offer_id, product_id, visibility}")
+    p.add_argument("--last-id", default="", help="Cursor for pagination")
+    p.add_argument("--limit", type=int, default=100, help="Max results (default 100)")
 
-    p = sub.add_parser("product-info", help="Информация о товаре")
-    p.add_argument("--offer-id", default="")
-    p.add_argument("--product-id", type=int, default=0)
-    p.add_argument("--sku", type=int, default=0)
+    p = sub.add_parser("product-info", help="Get product info")
+    p.add_argument("--offer-id", default="", help="Offer ID (seller SKU)")
+    p.add_argument("--product-id", type=int, default=0, help="Ozon product ID")
+    p.add_argument("--sku", type=int, default=0, help="Ozon SKU")
 
-    p = sub.add_parser("product-info-list", help="Информация о нескольких товарах")
-    p.add_argument("--offer-ids", default="")
-    p.add_argument("--product-ids", default="")
-    p.add_argument("--skus", default="")
+    p = sub.add_parser("product-info-list", help="Get info for multiple products")
+    p.add_argument("--offer-ids", default="", help="Comma-separated offer IDs")
+    p.add_argument("--product-ids", default="", help="Comma-separated product IDs")
+    p.add_argument("--skus", default="", help="Comma-separated SKUs")
 
-    p = sub.add_parser("product-import", help="Импорт товаров")
-    p.add_argument("items_json")
+    p = sub.add_parser("product-import", help="Import products")
+    p.add_argument("items_json", help="JSON array of product items: [{name, offer_id, ...}]")
 
-    p = sub.add_parser("product-import-info", help="Статус импорта")
-    p.add_argument("task_id", type=int)
+    p = sub.add_parser("product-import-info", help="Get product import status")
+    p.add_argument("task_id", type=int, help="Import task ID")
 
-    p = sub.add_parser("product-update", help="Обновить товары")
-    p.add_argument("items_json")
+    p = sub.add_parser("product-update", help="Update products")
+    p.add_argument("items_json", help="JSON array of items to update")
 
-    p = sub.add_parser("product-prices-update", help="Обновить цены")
-    p.add_argument("prices_json")
+    p = sub.add_parser("product-prices-update", help="Update product prices")
+    p.add_argument("prices_json", help="JSON array of prices: [{offer_id, price, ...}]")
 
-    p = sub.add_parser("product-stocks-update", help="Обновить остатки")
-    p.add_argument("stocks_json")
+    p = sub.add_parser("product-stocks-update", help="Update product stocks")
+    p.add_argument("stocks_json", help="JSON array of stocks: [{offer_id, stock, ...}]")
 
-    p = sub.add_parser("product-stocks-info", help="Информация об остатках")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--limit", type=int, default=100)
+    p = sub.add_parser("product-stocks-info", help="Get product stocks info")
+    p.add_argument("--filter-json", default="{}", help="JSON filter: {offer_id, product_id, visibility}")
+    p.add_argument("--last-id", default="", help="Cursor for pagination")
+    p.add_argument("--limit", type=int, default=100, help="Max results (default 100)")
 
-    p = sub.add_parser("product-prices-info", help="Информация о ценах")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--limit", type=int, default=100)
+    p = sub.add_parser("product-prices-info", help="Get product prices info")
+    p.add_argument("--filter-json", default="{}", help="JSON filter: {offer_id, product_id, visibility}")
+    p.add_argument("--last-id", default="", help="Cursor for pagination")
+    p.add_argument("--limit", type=int, default=100, help="Max results (default 100)")
 
-    p = sub.add_parser("product-description", help="Описание товара")
-    p.add_argument("--offer-id", default="")
-    p.add_argument("--product-id", type=int, default=0)
+    p = sub.add_parser("product-description", help="Get product description")
+    p.add_argument("--offer-id", default="", help="Offer ID (seller SKU)")
+    p.add_argument("--product-id", type=int, default=0, help="Ozon product ID")
 
-    p = sub.add_parser("product-attributes", help="Атрибуты товаров")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--limit", type=int, default=100)
+    p = sub.add_parser("product-attributes", help="Get product attributes")
+    p.add_argument("--filter-json", default="{}", help="JSON filter: {offer_id, product_id, visibility}")
+    p.add_argument("--last-id", default="", help="Cursor for pagination")
+    p.add_argument("--limit", type=int, default=100, help="Max results (default 100)")
 
-    p = sub.add_parser("product-archive", help="Архивировать товары")
-    p.add_argument("product_ids")
+    p = sub.add_parser("product-archive", help="Archive products")
+    p.add_argument("product_ids", help="Comma-separated list of product IDs")
 
-    p = sub.add_parser("product-unarchive", help="Разархивировать товары")
-    p.add_argument("product_ids")
+    p = sub.add_parser("product-unarchive", help="Unarchive products")
+    p.add_argument("product_ids", help="Comma-separated list of product IDs")
 
-    p = sub.add_parser("product-delete", help="Удалить товары")
-    p.add_argument("product_ids")
+    p = sub.add_parser("product-delete", help="Delete products")
+    p.add_argument("product_ids", help="Comma-separated list of product IDs")
 
-    p = sub.add_parser("product-rating", help="Контент-рейтинг по SKU")
-    p.add_argument("skus")
+    p = sub.add_parser("product-pictures-import", help="Import product pictures")
+    p.add_argument("images_json", help="JSON array of images: [{url, product_id, ...}]")
 
-    p = sub.add_parser("product-related-sku", help="Связанные SKU")
-    p.add_argument("items_json")
+    p = sub.add_parser("product-pictures-info", help="Get product pictures status")
+    p.add_argument("product_ids", help="Comma-separated list of product IDs")
+
+    p = sub.add_parser("product-geo-restrictions", help="Get product geo-restrictions")
+    p.add_argument("--filter-json", default="{}", help="JSON filter")
+    p.add_argument("--last-id", default="", help="Cursor for pagination")
+    p.add_argument("--limit", type=int, default=100, help="Max results (default 100)")
+
+    p = sub.add_parser("product-rating", help="Get content rating by SKU")
+    p.add_argument("skus", help="Comma-separated list of SKUs")
+
+    p = sub.add_parser("product-related-sku", help="Get related SKUs (FBO/FBS)")
+    p.add_argument("items_json", help="JSON array of items: [{sku, ...}]")
+
+    p = sub.add_parser("product-digital-codes", help="Upload digital activation codes")
+    p.add_argument("product_id", type=int, help="Ozon product ID")
+    p.add_argument("codes_json", help="JSON array of digital codes")
 
     # ── FBS Postings ───────────────────────────────────────────────
 
-    p = sub.add_parser("fbs-list", help="Список FBS-отправлений")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--limit", type=int, default=50)
-    p.add_argument("--offset", type=int, default=0)
+    p = sub.add_parser("fbs-list", help="List FBS postings")
+    p.add_argument("--filter-json", default="{}", help="JSON filter: {since, to, status, ...}")
+    p.add_argument("--dir", default="ASC", help="Sort direction: ASC or DESC (default ASC)")
+    p.add_argument("--limit", type=int, default=50, help="Max results (default 50)")
+    p.add_argument("--offset", type=int, default=0, help="Offset for pagination (default 0)")
 
-    p = sub.add_parser("fbs-get", help="Детали FBS-отправления")
-    p.add_argument("posting_number")
+    p = sub.add_parser("fbs-get", help="Get FBS posting details")
+    p.add_argument("posting_number", help="Posting number")
 
-    p = sub.add_parser("fbs-ship", help="Собрать FBS-отправление")
-    p.add_argument("posting_number")
-    p.add_argument("items_json")
+    p = sub.add_parser("fbs-cancel", help="Cancel FBS posting")
+    p.add_argument("posting_number", help="Posting number")
+    p.add_argument("cancel_reason_id", type=int, help="Cancellation reason ID")
+    p.add_argument("--message", default="", help="Cancellation message")
 
-    p = sub.add_parser("fbs-cancel", help="Отменить FBS-отправление")
-    p.add_argument("posting_number")
-    p.add_argument("cancel_reason_id", type=int)
-    p.add_argument("--message", default="")
+    p = sub.add_parser("fbs-cancel-reasons", help="List FBS cancellation reasons")
 
-    p = sub.add_parser("fbs-cancel-reasons", help="Причины отмены FBS")
+    p = sub.add_parser("fbs-tracking", help="Set tracking number for FBS posting")
+    p.add_argument("posting_number", help="Posting number")
+    p.add_argument("tracking_number", help="Tracking number")
 
-    p = sub.add_parser("fbs-tracking", help="Установить трек-номер")
-    p.add_argument("posting_number")
-    p.add_argument("tracking_number")
+    p = sub.add_parser("fbs-label", help="Download FBS posting label PDF")
+    p.add_argument("posting_number", help="Posting number")
+    p.add_argument("--output-dir", default=DEFAULT_LABELS_DIR, help="Output directory for label PDF")
 
-    p = sub.add_parser("fbs-label", help="Скачать этикетку")
-    p.add_argument("posting_number")
-    p.add_argument("--output-dir", default=DEFAULT_LABELS_DIR)
+    p = sub.add_parser("fbs-act-create", help="Create acceptance act")
+    p.add_argument("delivery_method_id", type=int, help="Delivery method ID")
+    p.add_argument("departure_date", help="Departure date (YYYY-MM-DD)")
 
-    p = sub.add_parser("fbs-act-create", help="Создать акт")
-    p.add_argument("delivery_method_id", type=int)
-    p.add_argument("departure_date")
+    p = sub.add_parser("fbs-act-status", help="Get acceptance act status")
+    p.add_argument("id", type=int, help="Act ID")
 
-    p = sub.add_parser("fbs-act-status", help="Статус акта")
-    p.add_argument("id", type=int)
+    p = sub.add_parser("fbs-act-pdf", help="Download acceptance act PDF")
+    p.add_argument("id", type=int, help="Act ID")
+    p.add_argument("--output-path", default="", help="Output file path for PDF")
 
-    p = sub.add_parser("fbs-act-pdf", help="Скачать PDF акта")
-    p.add_argument("id", type=int)
-    p.add_argument("--output-path", default="")
+    p = sub.add_parser("fbs-digital-act-pdf", help="Download digital acceptance act PDF")
+    p.add_argument("id", type=int, help="Act ID")
+    p.add_argument("--doc-type", default="act_of_acceptance", help="Document type (default act_of_acceptance)")
+    p.add_argument("--output-path", default="", help="Output file path for PDF")
 
-    p = sub.add_parser("fbs-restrictions", help="Ограничения отправления")
-    p.add_argument("posting_number")
+    p = sub.add_parser("fbs-container-labels", help="Download container labels PDF")
+    p.add_argument("id", type=int, help="Act ID")
+    p.add_argument("--output-path", default="", help="Output file path for PDF")
 
-    p = sub.add_parser("fbs-country-list", help="Список стран-производителей")
+    p = sub.add_parser("fbs-delivered", help="Confirm posting delivery (rFBS)")
+    p.add_argument("posting_number", help="Posting number")
+
+    p = sub.add_parser("fbs-last-mile", help="Ship last-mile posting")
+    p.add_argument("posting_number", help="Posting number")
+    p.add_argument("items_json", help="JSON array of items: [{quantity, sku}]")
+
+    p = sub.add_parser("fbs-timeslot-restrictions", help="Get timeslot change restrictions")
+    p.add_argument("delivery_method_id", type=int, help="Delivery method ID")
+
+    p = sub.add_parser("fbs-restrictions", help="Get posting restrictions")
+    p.add_argument("posting_number", help="Posting number")
+
+    p = sub.add_parser("fbs-country-set", help="Set product country of origin")
+    p.add_argument("posting_number", help="Posting number")
+    p.add_argument("product_id", type=int, help="Ozon product ID")
+    p.add_argument("country_iso_code", help="Country ISO code (e.g. RU, CN)")
+
+    p = sub.add_parser("fbs-country-list", help="List product countries of origin")
 
     # ── FBO ────────────────────────────────────────────────────────
 
-    p = sub.add_parser("fbo-list", help="Список FBO-отправлений")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--limit", type=int, default=50)
-    p.add_argument("--offset", type=int, default=0)
+    p = sub.add_parser("fbo-list", help="List FBO postings")
+    p.add_argument("--filter-json", default="{}", help="JSON filter: {since, to, status, ...}")
+    p.add_argument("--dir", default="ASC", help="Sort direction: ASC or DESC (default ASC)")
+    p.add_argument("--limit", type=int, default=50, help="Max results (default 50)")
+    p.add_argument("--offset", type=int, default=0, help="Offset for pagination (default 0)")
 
-    p = sub.add_parser("fbo-get", help="Детали FBO-отправления")
-    p.add_argument("posting_number")
+    p = sub.add_parser("fbo-get", help="Get FBO posting details")
+    p.add_argument("posting_number", help="Posting number")
 
-    p = sub.add_parser("fbo-supply-list", help="Список поставок")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--page", type=int, default=1)
+    p = sub.add_parser("fbo-supply-create", help="Create supply order")
+    p.add_argument("items_json", help="JSON array of supply items: [{sku, quantity}]")
+    p.add_argument("warehouse_id", type=int, help="Warehouse ID")
 
-    p = sub.add_parser("fbo-supply-get", help="Детали поставки")
-    p.add_argument("supply_order_id", type=int)
+    p = sub.add_parser("fbo-supply-get", help="Get supply order details")
+    p.add_argument("supply_order_id", type=int, help="Supply order ID")
 
-    p = sub.add_parser("fbo-supply-cancel", help="Отменить поставку")
-    p.add_argument("supply_order_id", type=int)
+    p = sub.add_parser("fbo-supply-list", help="List supply orders")
+    p.add_argument("--filter-json", default="{}", help="JSON filter")
+    p.add_argument("--page", type=int, default=1, help="Page number (default 1)")
+    p.add_argument("--page-size", type=int, default=50, help="Page size (default 50)")
 
-    p = sub.add_parser("fbo-supply-items", help="Товары поставки")
-    p.add_argument("supply_order_id", type=int)
+    p = sub.add_parser("fbo-supply-cancel", help="Cancel supply order")
+    p.add_argument("supply_order_id", type=int, help="Supply order ID")
+
+    p = sub.add_parser("fbo-supply-items", help="Get supply order items")
+    p.add_argument("supply_order_id", type=int, help="Supply order ID")
+
+    p = sub.add_parser("fbo-supply-shipments", help="Get supply order shipments")
+    p.add_argument("supply_order_id", type=int, help="Supply order ID")
+
+    p = sub.add_parser("fbo-warehouse-workload", help="Get FBO warehouse workload")
+    p.add_argument("warehouse_id", type=int, help="Warehouse ID")
 
     # ── Categories ─────────────────────────────────────────────────
 
-    sub.add_parser("categories", help="Дерево категорий")
+    p = sub.add_parser("categories", help="Get category tree")
+    p.add_argument("--language", default="DEFAULT", help="Language code (default DEFAULT)")
 
-    p = sub.add_parser("category-attributes", help="Атрибуты категории")
-    p.add_argument("description_category_id", type=int)
+    p = sub.add_parser("category-attributes", help="Get category attributes")
+    p.add_argument("description_category_id", type=int, help="Description category ID")
+    p.add_argument("--language", default="DEFAULT", help="Language code (default DEFAULT)")
+    p.add_argument("--type-id", type=int, default=0, help="Product type ID")
 
-    p = sub.add_parser("category-values", help="Значения словаря атрибута")
-    p.add_argument("attribute_id", type=int)
-    p.add_argument("description_category_id", type=int)
-    p.add_argument("--limit", type=int, default=100)
+    p = sub.add_parser("category-values", help="Get attribute dictionary values")
+    p.add_argument("attribute_id", type=int, help="Attribute ID")
+    p.add_argument("description_category_id", type=int, help="Description category ID")
+    p.add_argument("--limit", type=int, default=100, help="Max results (default 100)")
+    p.add_argument("--last-value-id", type=int, default=0, help="Last value ID for pagination")
 
-    p = sub.add_parser("category-values-search", help="Поиск по словарю")
-    p.add_argument("attribute_id", type=int)
-    p.add_argument("description_category_id", type=int)
-    p.add_argument("value")
+    p = sub.add_parser("category-values-search", help="Search attribute dictionary values")
+    p.add_argument("attribute_id", type=int, help="Attribute ID")
+    p.add_argument("description_category_id", type=int, help="Description category ID")
+    p.add_argument("value", help="Search value")
+    p.add_argument("--limit", type=int, default=100, help="Max results (default 100)")
 
     # ── Finance ────────────────────────────────────────────────────
 
-    p = sub.add_parser("finance-transactions", help="Финансовые транзакции")
-    p.add_argument("filter_json")
-    p.add_argument("--page", type=int, default=1)
-    p.add_argument("--page-size", type=int, default=50)
+    p = sub.add_parser("finance-transactions", help="List financial transactions")
+    p.add_argument("filter_json", help="JSON filter: {date, transaction_type, ...}")
+    p.add_argument("--page", type=int, default=1, help="Page number (default 1)")
+    p.add_argument("--page-size", type=int, default=50, help="Page size (default 50)")
 
-    p = sub.add_parser("finance-totals", help="Итоги по транзакциям")
-    p.add_argument("filter_json")
+    p = sub.add_parser("finance-totals", help="Get transaction totals")
+    p.add_argument("filter_json", help="JSON filter: {date, transaction_type, ...}")
 
-    p = sub.add_parser("finance-cash-flow", help="Движение денежных средств")
-    p.add_argument("filter_json")
+    p = sub.add_parser("finance-cash-flow", help="Get cash flow statement")
+    p.add_argument("filter_json", help="JSON filter: {date, ...}")
+    p.add_argument("--page", type=int, default=1, help="Page number (default 1)")
+    p.add_argument("--page-size", type=int, default=50, help="Page size (default 50)")
 
-    p = sub.add_parser("finance-realization", help="Отчёт о реализации")
-    p.add_argument("date")
+    p = sub.add_parser("finance-realization", help="Get realization report")
+    p.add_argument("date", help="Report date (YYYY-MM-DD)")
 
     # ── Analytics ──────────────────────────────────────────────────
 
-    p = sub.add_parser("analytics", help="Аналитические данные")
-    p.add_argument("date_from")
-    p.add_argument("date_to")
-    p.add_argument("metrics_json")
-    p.add_argument("dimensions_json")
+    p = sub.add_parser("analytics", help="Get analytics data")
+    p.add_argument("date_from", help="Start date (YYYY-MM-DD)")
+    p.add_argument("date_to", help="End date (YYYY-MM-DD)")
+    p.add_argument("metrics_json", help='JSON array of metrics: ["revenue", "ordered_units", ...]')
+    p.add_argument("dimensions_json", help='JSON array of dimensions: ["sku", "day", ...]')
+    p.add_argument("--filters-json", default="", help="JSON array of filters")
+    p.add_argument("--sort-json", default="", help="JSON array of sort rules")
+    p.add_argument("--limit", type=int, default=1000, help="Max results (default 1000)")
+    p.add_argument("--offset", type=int, default=0, help="Offset for pagination (default 0)")
 
-    p = sub.add_parser("analytics-stock", help="Остатки на складах")
-    p.add_argument("--limit", type=int, default=100)
+    p = sub.add_parser("analytics-stock", help="Get stock on warehouses")
+    p.add_argument("--limit", type=int, default=100, help="Max results (default 100)")
+    p.add_argument("--offset", type=int, default=0, help="Offset for pagination (default 0)")
+    p.add_argument("--warehouse-type", default="", help="Warehouse type filter")
 
-    p = sub.add_parser("analytics-turnover", help="Оборачиваемость товаров")
-    p.add_argument("date_from")
-    p.add_argument("date_to")
-    p.add_argument("--skus", default="")
+    p = sub.add_parser("analytics-turnover", help="Get item turnover")
+    p.add_argument("date_from", help="Start date (YYYY-MM-DD)")
+    p.add_argument("date_to", help="End date (YYYY-MM-DD)")
+    p.add_argument("--skus", default="", help="Comma-separated list of SKUs")
 
     # ── Warehouses ─────────────────────────────────────────────────
 
-    sub.add_parser("warehouses", help="Склады продавца")
+    p = sub.add_parser("warehouses", help="List seller warehouses")
 
-    p = sub.add_parser("delivery-methods", help="Способы доставки")
-    p.add_argument("--filter-json", default="{}")
+    p = sub.add_parser("delivery-methods", help="List delivery methods")
+    p.add_argument("--filter-json", default="{}", help="JSON filter")
+    p.add_argument("--limit", type=int, default=50, help="Max results (default 50)")
+    p.add_argument("--offset", type=int, default=0, help="Offset for pagination (default 0)")
 
     # ── Returns ────────────────────────────────────────────────────
 
-    p = sub.add_parser("returns-fbo", help="Возвраты FBO")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--limit", type=int, default=50)
+    p = sub.add_parser("returns-fbo", help="List FBO returns")
+    p.add_argument("--filter-json", default="{}", help="JSON filter")
+    p.add_argument("--last-id", type=int, default=0, help="Last ID for pagination")
+    p.add_argument("--limit", type=int, default=50, help="Max results (default 50)")
 
-    p = sub.add_parser("returns-fbs", help="Возвраты FBS")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--limit", type=int, default=50)
+    p = sub.add_parser("returns-fbs", help="List FBS returns")
+    p.add_argument("--filter-json", default="{}", help="JSON filter")
+    p.add_argument("--last-id", type=int, default=0, help="Last ID for pagination")
+    p.add_argument("--limit", type=int, default=50, help="Max results (default 50)")
 
-    p = sub.add_parser("return-get", help="Детали возврата")
-    p.add_argument("posting_number")
+    p = sub.add_parser("return-get", help="Get return details")
+    p.add_argument("posting_number", help="Posting number")
 
-    p = sub.add_parser("returns-rfbs", help="Возвраты rFBS")
-    p.add_argument("--filter-json", default="{}")
+    p = sub.add_parser("returns-rfbs", help="List rFBS returns")
+    p.add_argument("--filter-json", default="{}", help="JSON filter")
+    p.add_argument("--last-id", type=int, default=0, help="Last ID for pagination")
+    p.add_argument("--limit", type=int, default=50, help="Max results (default 50)")
 
-    p = sub.add_parser("return-rfbs-get", help="Детали возврата rFBS")
-    p.add_argument("return_id", type=int)
+    p = sub.add_parser("return-rfbs-get", help="Get rFBS return details")
+    p.add_argument("return_id", type=int, help="Return ID")
 
-    p = sub.add_parser("return-rfbs-approve", help="Одобрить возврат rFBS")
-    p.add_argument("return_id", type=int)
-    p.add_argument("--comment", default="")
+    p = sub.add_parser("return-rfbs-approve", help="Approve rFBS return")
+    p.add_argument("return_id", type=int, help="Return ID")
+    p.add_argument("--comment", default="", help="Approval comment")
 
-    p = sub.add_parser("return-rfbs-reject", help="Отклонить возврат rFBS")
-    p.add_argument("return_id", type=int)
-    p.add_argument("--comment", default="")
+    p = sub.add_parser("return-rfbs-reject", help="Reject rFBS return")
+    p.add_argument("return_id", type=int, help="Return ID")
+    p.add_argument("--comment", default="", help="Rejection comment")
+    p.add_argument("--reject-reason-id", type=int, default=0, help="Rejection reason ID")
+
+    p = sub.add_parser("return-rfbs-compensate", help="Compensate rFBS return")
+    p.add_argument("return_id", type=int, help="Return ID")
+    p.add_argument("compensation_amount", type=float, help="Compensation amount")
 
     # ── Chats ──────────────────────────────────────────────────────
 
-    p = sub.add_parser("chats", help="Список чатов")
-    p.add_argument("--page", type=int, default=1)
+    p = sub.add_parser("chats", help="List chats")
+    p.add_argument("--chat-ids", default="", help="Comma-separated list of chat IDs")
+    p.add_argument("--page", type=int, default=1, help="Page number (default 1)")
+    p.add_argument("--page-size", type=int, default=30, help="Page size (default 30)")
 
-    p = sub.add_parser("chat-history", help="История чата")
-    p.add_argument("chat_id")
-    p.add_argument("--limit", type=int, default=50)
+    p = sub.add_parser("chat-history", help="Get chat message history")
+    p.add_argument("chat_id", help="Chat ID")
+    p.add_argument("--from-message-id", default="", help="Start from this message ID")
+    p.add_argument("--limit", type=int, default=50, help="Max messages (default 50)")
+    p.add_argument("--direction", default="Forward", help="Direction: Forward or Backward (default Forward)")
 
-    p = sub.add_parser("chat-start", help="Начать чат")
-    p.add_argument("posting_number")
+    p = sub.add_parser("chat-start", help="Start a chat for a posting")
+    p.add_argument("posting_number", help="Posting number")
 
-    p = sub.add_parser("chat-send", help="Отправить сообщение")
-    p.add_argument("chat_id")
-    p.add_argument("message")
+    p = sub.add_parser("chat-send", help="Send a chat message")
+    p.add_argument("chat_id", help="Chat ID")
+    p.add_argument("message", help="Message text")
+
+    p = sub.add_parser("chat-send-file", help="Send a file in chat")
+    p.add_argument("chat_id", help="Chat ID")
+    p.add_argument("base64_content", help="Base64-encoded file content")
+    p.add_argument("--name", default="file", help="File name (default file)")
+
+    p = sub.add_parser("chat-read", help="Mark chat as read")
+    p.add_argument("chat_id", help="Chat ID")
+    p.add_argument("from_message_id", help="Mark read from this message ID")
 
     # ── Promotions ─────────────────────────────────────────────────
 
-    sub.add_parser("promos", help="Доступные акции")
+    p = sub.add_parser("promos", help="List available promotions")
 
-    p = sub.add_parser("promo-candidates", help="Кандидаты в акцию")
-    p.add_argument("action_id", type=int)
+    p = sub.add_parser("promo-candidates", help="List promotion candidate products")
+    p.add_argument("action_id", type=int, help="Promotion action ID")
+    p.add_argument("--limit", type=int, default=100, help="Max results (default 100)")
+    p.add_argument("--offset", type=int, default=0, help="Offset for pagination (default 0)")
 
-    p = sub.add_parser("promo-products", help="Товары в акции")
-    p.add_argument("action_id", type=int)
+    p = sub.add_parser("promo-products", help="List products in promotion")
+    p.add_argument("action_id", type=int, help="Promotion action ID")
+    p.add_argument("--limit", type=int, default=100, help="Max results (default 100)")
+    p.add_argument("--offset", type=int, default=0, help="Offset for pagination (default 0)")
 
-    sub.add_parser("promo-hotsale", help="Hot Sale акции")
+    p = sub.add_parser("promo-products-add", help="Add products to promotion")
+    p.add_argument("action_id", type=int, help="Promotion action ID")
+    p.add_argument("products_json", help="JSON array of products: [{product_id, action_price}]")
+
+    p = sub.add_parser("promo-products-remove", help="Remove products from promotion")
+    p.add_argument("action_id", type=int, help="Promotion action ID")
+    p.add_argument("product_ids", help="Comma-separated list of product IDs")
+
+    p = sub.add_parser("promo-hotsale", help="List Hot Sale promotions")
 
     # ── Strategies ─────────────────────────────────────────────────
 
-    sub.add_parser("strategies", help="Ценовые стратегии")
+    p = sub.add_parser("strategies", help="List pricing strategies")
 
-    p = sub.add_parser("strategy-create", help="Создать стратегию")
-    p.add_argument("type")
-    p.add_argument("update_type")
-    p.add_argument("--name", default="")
+    p = sub.add_parser("strategy-create", help="Create pricing strategy")
+    p.add_argument("type", help="Strategy type")
+    p.add_argument("update_type", help="Update type")
+    p.add_argument("--name", default="", help="Strategy name")
 
-    p = sub.add_parser("strategy-delete", help="Удалить стратегию")
-    p.add_argument("strategy_id", type=int)
+    p = sub.add_parser("strategy-update", help="Update pricing strategy")
+    p.add_argument("strategy_id", type=int, help="Strategy ID")
+    p.add_argument("payload_json", help="JSON of fields to update")
+
+    p = sub.add_parser("strategy-delete", help="Delete pricing strategy")
+    p.add_argument("strategy_id", type=int, help="Strategy ID")
 
     # ── Rating ─────────────────────────────────────────────────────
 
-    sub.add_parser("rating", help="Рейтинг продавца")
+    p = sub.add_parser("rating", help="Get seller rating summary")
 
-    p = sub.add_parser("rating-history", help="История рейтинга")
-    p.add_argument("date_from")
-    p.add_argument("date_to")
+    p = sub.add_parser("rating-history", help="Get rating history")
+    p.add_argument("date_from", help="Start date (YYYY-MM-DD)")
+    p.add_argument("date_to", help="End date (YYYY-MM-DD)")
+    p.add_argument("--ratings", default="", help="Comma-separated list of rating names")
 
-    p = sub.add_parser("quality-rating", help="Рейтинг качества")
-    p.add_argument("date_from")
-    p.add_argument("date_to")
+    p = sub.add_parser("quality-rating", help="Get quality rating")
+    p.add_argument("date_from", help="Start date (YYYY-MM-DD)")
+    p.add_argument("date_to", help="End date (YYYY-MM-DD)")
+    p.add_argument("--warehouse-id", type=int, default=0, help="Warehouse ID filter")
 
     # ── Reports ────────────────────────────────────────────────────
 
-    p = sub.add_parser("report-create", help="Создать отчёт")
-    p.add_argument("report_type")
-    p.add_argument("--params-json", default="{}")
+    p = sub.add_parser("report-create", help="Create a report")
+    p.add_argument("report_type", help="Report type")
+    p.add_argument("--params-json", default="{}", help="JSON report parameters")
 
-    p = sub.add_parser("report-info", help="Статус отчёта")
-    p.add_argument("code")
+    p = sub.add_parser("report-info", help="Get report status")
+    p.add_argument("code", help="Report code")
 
-    p = sub.add_parser("report-list", help="Список отчётов")
-    p.add_argument("--page", type=int, default=1)
+    p = sub.add_parser("report-list", help="List reports")
+    p.add_argument("--page", type=int, default=1, help="Page number (default 1)")
+    p.add_argument("--page-size", type=int, default=50, help="Page size (default 50)")
+    p.add_argument("--report-type", default="", help="Filter by report type")
 
-    p = sub.add_parser("report-download", help="Скачать отчёт")
-    p.add_argument("code")
-    p.add_argument("--output-path", default="")
+    p = sub.add_parser("report-download", help="Download report file")
+    p.add_argument("code", help="Report code")
+    p.add_argument("--output-path", default="", help="Output file path")
 
     # ── Reviews ────────────────────────────────────────────────────
 
-    p = sub.add_parser("reviews", help="Список отзывов")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--limit", type=int, default=50)
+    p = sub.add_parser("reviews", help="List reviews")
+    p.add_argument("--filter-json", default="{}", help="JSON filter")
+    p.add_argument("--sort-dir", default="DESC", help="Sort direction: ASC or DESC (default DESC)")
+    p.add_argument("--limit", type=int, default=50, help="Max results (default 50)")
+    p.add_argument("--offset", type=int, default=0, help="Offset for pagination (default 0)")
 
-    p = sub.add_parser("review-info", help="Детали отзыва")
-    p.add_argument("review_id", type=int)
+    p = sub.add_parser("review-info", help="Get review details")
+    p.add_argument("review_id", type=int, help="Review ID")
 
-    p = sub.add_parser("review-comment", help="Ответить на отзыв")
-    p.add_argument("review_id", type=int)
-    p.add_argument("text")
+    p = sub.add_parser("review-count", help="Get review count")
+    p.add_argument("--filter-json", default="{}", help="JSON filter")
+
+    p = sub.add_parser("review-comment", help="Reply to a review")
+    p.add_argument("review_id", type=int, help="Review ID")
+    p.add_argument("text", help="Reply text")
 
     # ── Questions ──────────────────────────────────────────────────
 
-    p = sub.add_parser("questions", help="Список вопросов")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--limit", type=int, default=50)
+    p = sub.add_parser("questions", help="List questions")
+    p.add_argument("--filter-json", default="{}", help="JSON filter")
+    p.add_argument("--sort-dir", default="DESC", help="Sort direction: ASC or DESC (default DESC)")
+    p.add_argument("--limit", type=int, default=50, help="Max results (default 50)")
+    p.add_argument("--offset", type=int, default=0, help="Offset for pagination (default 0)")
 
-    p = sub.add_parser("question-answer", help="Ответить на вопрос")
-    p.add_argument("question_id", type=int)
-    p.add_argument("answer")
+    p = sub.add_parser("question-answer", help="Answer a question")
+    p.add_argument("question_id", type=int, help="Question ID")
+    p.add_argument("answer", help="Answer text")
+
+    p = sub.add_parser("question-update", help="Update answer to a question")
+    p.add_argument("question_id", type=int, help="Question ID")
+    p.add_argument("answer", help="Updated answer text")
 
     # ── Cancellations ──────────────────────────────────────────────
 
-    p = sub.add_parser("cancellations", help="Заявки на отмену")
-    p.add_argument("--filter-json", default="{}")
-    p.add_argument("--limit", type=int, default=50)
+    p = sub.add_parser("cancellations", help="List cancellation requests")
+    p.add_argument("--filter-json", default="{}", help="JSON filter")
+    p.add_argument("--limit", type=int, default=50, help="Max results (default 50)")
+    p.add_argument("--offset", type=int, default=0, help="Offset for pagination (default 0)")
 
-    p = sub.add_parser("cancellation-info", help="Детали заявки на отмену")
-    p.add_argument("cancellation_id", type=int)
+    p = sub.add_parser("cancellation-info", help="Get cancellation request details")
+    p.add_argument("cancellation_id", type=int, help="Cancellation ID")
 
-    p = sub.add_parser("cancellation-approve", help="Одобрить отмену")
-    p.add_argument("cancellation_id", type=int)
-    p.add_argument("--comment", default="")
+    p = sub.add_parser("cancellation-approve", help="Approve cancellation request")
+    p.add_argument("cancellation_id", type=int, help="Cancellation ID")
+    p.add_argument("--comment", default="", help="Approval comment")
 
-    p = sub.add_parser("cancellation-reject", help="Отклонить отмену")
-    p.add_argument("cancellation_id", type=int)
-    p.add_argument("--comment", default="")
+    p = sub.add_parser("cancellation-reject", help="Reject cancellation request")
+    p.add_argument("cancellation_id", type=int, help="Cancellation ID")
+    p.add_argument("--comment", default="", help="Rejection comment")
 
     # ── Certificates ───────────────────────────────────────────────
 
-    p = sub.add_parser("certificates", help="Список сертификатов")
-    p.add_argument("--filter-json", default="{}")
+    p = sub.add_parser("certificates", help="List certificates")
+    p.add_argument("--filter-json", default="{}", help="JSON filter")
+    p.add_argument("--page", type=int, default=1, help="Page number (default 1)")
+    p.add_argument("--page-size", type=int, default=50, help="Page size (default 50)")
 
-    p = sub.add_parser("certificate-info", help="Детали сертификата")
-    p.add_argument("certificate_id", type=int)
+    p = sub.add_parser("certificate-info", help="Get certificate details")
+    p.add_argument("certificate_id", type=int, help="Certificate ID")
 
-    p = sub.add_parser("certificate-delete", help="Удалить сертификат")
-    p.add_argument("certificate_id", type=int)
+    p = sub.add_parser("certificate-create", help="Create a certificate")
+    p.add_argument("files_json", help="JSON array of files: [{url, name}]")
+    p.add_argument("name", help="Certificate name")
+    p.add_argument("type_code", help="Certificate type code")
+
+    p = sub.add_parser("certificate-delete", help="Delete a certificate")
+    p.add_argument("certificate_id", type=int, help="Certificate ID")
+
+    p = sub.add_parser("certificate-bind", help="Bind certificate to products")
+    p.add_argument("certificate_id", type=int, help="Certificate ID")
+    p.add_argument("product_ids", help="Comma-separated list of product IDs")
+
+    p = sub.add_parser("certificate-unbind", help="Unbind certificate from products")
+    p.add_argument("certificate_id", type=int, help="Certificate ID")
+    p.add_argument("product_ids", help="Comma-separated list of product IDs")
 
     # ── Barcodes ───────────────────────────────────────────────────
 
-    p = sub.add_parser("barcode-generate", help="Сгенерировать штрихкоды")
-    p.add_argument("product_ids")
+    p = sub.add_parser("barcode-generate", help="Generate barcodes for products")
+    p.add_argument("product_ids", help="Comma-separated list of product IDs")
 
-    p = sub.add_parser("barcode-add", help="Привязать штрихкоды")
-    p.add_argument("barcodes_json")
+    p = sub.add_parser("barcode-add", help="Add barcodes to products")
+    p.add_argument("barcodes_json", help="JSON array of barcodes: [{barcode, product_id}]")
 
     # ── Brands ─────────────────────────────────────────────────────
 
-    sub.add_parser("brands", help="Список брендов")
+    p = sub.add_parser("brands", help="List brands")
+    p.add_argument("--page", type=int, default=1, help="Page number (default 1)")
+    p.add_argument("--page-size", type=int, default=100, help="Page size (default 100)")
 
     # ── Parse & dispatch ───────────────────────────────────────────
 
@@ -419,124 +587,547 @@ def main(argv: list[str] | None = None) -> None:
         parser.print_help()
         sys.exit(1)
 
+    # Helper: parse optional filter JSON, returns dict or None
+    def _filt(raw: str) -> dict | None:
+        d = _load_json(raw)
+        return d or None
+
     handlers = {
-        # Legacy
-        "list": lambda: server.ozon_unfulfilled_orders(days=args.days),
-        "labels": lambda: server.ozon_labels_pdf(
-            posting_numbers=",".join(args.posting) if args.posting else "all",
-            days=args.days, output_dir=args.output_dir,
-        ),
-        "ship": lambda: server.ozon_ship_orders(
-            posting_numbers=",".join(args.posting) if args.posting else "all",
-            days=args.days,
-        ),
         # Products
-        "product-list": lambda: server.ozon_product_list(filter_json=args.filter_json, limit=args.limit),
-        "product-info": lambda: server.ozon_product_info(offer_id=args.offer_id, product_id=args.product_id, sku=args.sku),
-        "product-info-list": lambda: server.ozon_product_info_list(offer_ids=args.offer_ids, product_ids=args.product_ids, skus=args.skus),
-        "product-import": lambda: server.ozon_product_import(args.items_json),
-        "product-import-info": lambda: server.ozon_product_import_info(args.task_id),
-        "product-update": lambda: server.ozon_product_update(args.items_json),
-        "product-prices-update": lambda: server.ozon_product_prices_update(args.prices_json),
-        "product-stocks-update": lambda: server.ozon_product_stocks_update(args.stocks_json),
-        "product-stocks-info": lambda: server.ozon_product_stocks_info(filter_json=args.filter_json, limit=args.limit),
-        "product-prices-info": lambda: server.ozon_product_prices_info(filter_json=args.filter_json, limit=args.limit),
-        "product-description": lambda: server.ozon_product_description(offer_id=args.offer_id, product_id=args.product_id),
-        "product-attributes": lambda: server.ozon_product_attributes(filter_json=args.filter_json, limit=args.limit),
-        "product-archive": lambda: server.ozon_product_archive(args.product_ids),
-        "product-unarchive": lambda: server.ozon_product_unarchive(args.product_ids),
-        "product-delete": lambda: server.ozon_product_delete(args.product_ids),
-        "product-rating": lambda: server.ozon_product_rating(args.skus),
-        "product-related-sku": lambda: server.ozon_product_related_sku(args.items_json),
+        "product-list": lambda: _j(
+            _api().product_list(
+                filter_dict=_filt(args.filter_json),
+                last_id=args.last_id,
+                limit=args.limit,
+            )
+        ),
+        "product-info": lambda: _j(
+            _api().product_info(
+                offer_id=args.offer_id,
+                product_id=args.product_id,
+                sku=args.sku,
+            )
+        ),
+        "product-info-list": lambda: _j(
+            _api().product_info_list(
+                offer_id=[s.strip() for s in args.offer_ids.split(",") if s.strip()] or None,
+                product_id=[int(s) for s in args.product_ids.split(",") if s.strip()] or None,
+                sku=[int(s) for s in args.skus.split(",") if s.strip()] or None,
+            )
+        ),
+        "product-import": lambda: _j(
+            _api().product_import(_load_json(args.items_json))
+        ),
+        "product-import-info": lambda: _j(
+            _api().product_import_info(args.task_id)
+        ),
+        "product-update": lambda: _j(
+            _api().product_update(_load_json(args.items_json))
+        ),
+        "product-prices-update": lambda: _j(
+            _api().product_prices_update(_load_json(args.prices_json))
+        ),
+        "product-stocks-update": lambda: _j(
+            _api().product_stocks_update(_load_json(args.stocks_json))
+        ),
+        "product-stocks-info": lambda: _j(
+            _api().product_stocks_info(
+                filter_dict=_filt(args.filter_json),
+                last_id=args.last_id,
+                limit=args.limit,
+            )
+        ),
+        "product-prices-info": lambda: _j(
+            _api().product_prices_info(
+                filter_dict=_filt(args.filter_json),
+                last_id=args.last_id,
+                limit=args.limit,
+            )
+        ),
+        "product-description": lambda: _j(
+            _api().product_description(
+                offer_id=args.offer_id,
+                product_id=args.product_id,
+            )
+        ),
+        "product-attributes": lambda: _j(
+            _api().product_attributes(
+                filter_dict=_filt(args.filter_json),
+                last_id=args.last_id,
+                limit=args.limit,
+            )
+        ),
+        "product-archive": lambda: _j(
+            _api().product_archive([int(x) for x in args.product_ids.split(",") if x.strip()])
+        ),
+        "product-unarchive": lambda: _j(
+            _api().product_unarchive([int(x) for x in args.product_ids.split(",") if x.strip()])
+        ),
+        "product-delete": lambda: _j(
+            _api().product_delete([int(x) for x in args.product_ids.split(",") if x.strip()])
+        ),
+        "product-pictures-import": lambda: _j(
+            _api().product_pictures_import(_load_json(args.images_json))
+        ),
+        "product-pictures-info": lambda: _j(
+            _api().product_pictures_info([int(x) for x in args.product_ids.split(",") if x.strip()])
+        ),
+        "product-geo-restrictions": lambda: _j(
+            _api().product_geo_restrictions(
+                filter_dict=_filt(args.filter_json),
+                last_id=args.last_id,
+                limit=args.limit,
+            )
+        ),
+        "product-rating": lambda: _j(
+            _api().product_rating([int(x) for x in args.skus.split(",") if x.strip()])
+        ),
+        "product-related-sku": lambda: _j(
+            _api().product_related_sku(_load_json(args.items_json))
+        ),
+        "product-digital-codes": lambda: _j(
+            _api().product_upload_digital_codes(
+                digital_codes=_load_json(args.codes_json),
+                product_id=args.product_id,
+            )
+        ),
         # FBS
-        "fbs-list": lambda: server.ozon_fbs_postings_list(filter_json=args.filter_json, limit=args.limit, offset=args.offset),
-        "fbs-get": lambda: server.ozon_fbs_posting_get(args.posting_number),
-        "fbs-ship": lambda: server.ozon_fbs_posting_ship(args.posting_number, args.items_json),
-        "fbs-cancel": lambda: server.ozon_fbs_posting_cancel(args.posting_number, args.cancel_reason_id, args.message),
-        "fbs-cancel-reasons": lambda: server.ozon_fbs_cancel_reasons(),
-        "fbs-tracking": lambda: server.ozon_fbs_posting_tracking(args.posting_number, args.tracking_number),
-        "fbs-label": lambda: server.ozon_fbs_posting_label(args.posting_number, output_dir=args.output_dir),
-        "fbs-act-create": lambda: server.ozon_fbs_act_create(args.delivery_method_id, args.departure_date),
-        "fbs-act-status": lambda: server.ozon_fbs_act_status(args.id),
-        "fbs-act-pdf": lambda: server.ozon_fbs_act_pdf(args.id, output_path=args.output_path),
-        "fbs-restrictions": lambda: server.ozon_fbs_restrictions(args.posting_number),
-        "fbs-country-list": lambda: server.ozon_fbs_product_country_list(),
+        "fbs-list": lambda: _j(
+            _api().fbs_postings_list(
+                filter_dict=_filt(args.filter_json),
+                dir=args.dir,
+                limit=args.limit,
+                offset=args.offset,
+            )
+        ),
+        "fbs-get": lambda: _j(
+            _api().fbs_posting_get(args.posting_number)
+        ),
+        "fbs-cancel": lambda: _j(
+            _api().fbs_posting_cancel(
+                args.posting_number,
+                args.cancel_reason_id,
+                args.message,
+            )
+        ),
+        "fbs-cancel-reasons": lambda: _j(
+            _api().fbs_cancel_reasons()
+        ),
+        "fbs-tracking": lambda: _j(
+            _api().fbs_posting_tracking(args.posting_number, args.tracking_number)
+        ),
+        "fbs-label": lambda: (
+            lambda pdf: _download(
+                pdf,
+                os.path.join(args.output_dir, f"{args.posting_number}.pdf"),
+            )
+        )(_api().get_label_pdf(args.posting_number)),
+        "fbs-act-create": lambda: _j(
+            _api().fbs_act_create(args.delivery_method_id, args.departure_date)
+        ),
+        "fbs-act-status": lambda: _j(
+            _api().fbs_act_status(args.id)
+        ),
+        "fbs-act-pdf": lambda: (
+            lambda data: _download(
+                data,
+                args.output_path or os.path.join(DEFAULT_DOCS_DIR, f"act_{args.id}.pdf"),
+            )
+        )(_api().fbs_act_pdf(args.id)),
+        "fbs-digital-act-pdf": lambda: (
+            lambda data: _download(
+                data,
+                args.output_path or os.path.join(DEFAULT_DOCS_DIR, f"digital_act_{args.id}.pdf"),
+            )
+        )(_api().fbs_digital_act_pdf(args.id, doc_type=args.doc_type)),
+        "fbs-container-labels": lambda: (
+            lambda data: _download(
+                data,
+                args.output_path or os.path.join(DEFAULT_DOCS_DIR, f"container_{args.id}.pdf"),
+            )
+        )(_api().fbs_container_labels(args.id)),
+        "fbs-delivered": lambda: _j(
+            _api().fbs_posting_delivered(args.posting_number)
+        ),
+        "fbs-last-mile": lambda: _j(
+            _api().fbs_posting_last_mile(args.posting_number, _load_json(args.items_json))
+        ),
+        "fbs-timeslot-restrictions": lambda: _j(
+            _api().fbs_timeslot_restrictions(args.delivery_method_id)
+        ),
+        "fbs-restrictions": lambda: _j(
+            _api().fbs_restrictions(args.posting_number)
+        ),
+        "fbs-country-set": lambda: _j(
+            _api().fbs_product_country_set(
+                args.posting_number, args.product_id, args.country_iso_code,
+            )
+        ),
+        "fbs-country-list": lambda: _j(
+            _api().fbs_product_country_list()
+        ),
         # FBO
-        "fbo-list": lambda: server.ozon_fbo_postings_list(filter_json=args.filter_json, limit=args.limit, offset=args.offset),
-        "fbo-get": lambda: server.ozon_fbo_posting_get(args.posting_number),
-        "fbo-supply-list": lambda: server.ozon_fbo_supply_list(filter_json=args.filter_json, page=args.page),
-        "fbo-supply-get": lambda: server.ozon_fbo_supply_get(args.supply_order_id),
-        "fbo-supply-cancel": lambda: server.ozon_fbo_supply_cancel(args.supply_order_id),
-        "fbo-supply-items": lambda: server.ozon_fbo_supply_items(args.supply_order_id),
+        "fbo-list": lambda: _j(
+            _api().fbo_postings_list(
+                filter_dict=_filt(args.filter_json),
+                dir=args.dir,
+                limit=args.limit,
+                offset=args.offset,
+            )
+        ),
+        "fbo-get": lambda: _j(
+            _api().fbo_posting_get(args.posting_number)
+        ),
+        "fbo-supply-create": lambda: _j(
+            _api().fbo_supply_create(_load_json(args.items_json), args.warehouse_id)
+        ),
+        "fbo-supply-get": lambda: _j(
+            _api().fbo_supply_get(args.supply_order_id)
+        ),
+        "fbo-supply-list": lambda: _j(
+            _api().fbo_supply_list(
+                filter_dict=_filt(args.filter_json),
+                page=args.page,
+                page_size=args.page_size,
+            )
+        ),
+        "fbo-supply-cancel": lambda: _j(
+            _api().fbo_supply_cancel(args.supply_order_id)
+        ),
+        "fbo-supply-items": lambda: _j(
+            _api().fbo_supply_items(args.supply_order_id)
+        ),
+        "fbo-supply-shipments": lambda: _j(
+            _api().fbo_supply_shipments(args.supply_order_id)
+        ),
+        "fbo-warehouse-workload": lambda: _j(
+            _api().fbo_warehouse_workload(args.warehouse_id)
+        ),
         # Categories
-        "categories": lambda: server.ozon_category_tree(),
-        "category-attributes": lambda: server.ozon_category_attributes(args.description_category_id),
-        "category-values": lambda: server.ozon_category_attribute_values(args.attribute_id, args.description_category_id, limit=args.limit),
-        "category-values-search": lambda: server.ozon_category_attribute_values_search(args.attribute_id, args.description_category_id, args.value),
+        "categories": lambda: _j(
+            _api().category_tree(language=args.language)
+        ),
+        "category-attributes": lambda: _j(
+            _api().category_attributes(
+                args.description_category_id,
+                language=args.language,
+                type_id=args.type_id,
+            )
+        ),
+        "category-values": lambda: _j(
+            _api().category_attribute_values(
+                args.attribute_id,
+                args.description_category_id,
+                limit=args.limit,
+                last_value_id=args.last_value_id,
+            )
+        ),
+        "category-values-search": lambda: _j(
+            _api().category_attribute_values_search(
+                args.attribute_id,
+                args.description_category_id,
+                args.value,
+                limit=args.limit,
+            )
+        ),
         # Finance
-        "finance-transactions": lambda: server.ozon_finance_transactions(args.filter_json, page=args.page, page_size=args.page_size),
-        "finance-totals": lambda: server.ozon_finance_totals(args.filter_json),
-        "finance-cash-flow": lambda: server.ozon_finance_cash_flow(args.filter_json),
-        "finance-realization": lambda: server.ozon_finance_realization(args.date),
+        "finance-transactions": lambda: _j(
+            _api().finance_transactions(
+                _load_json(args.filter_json),
+                page=args.page,
+                page_size=args.page_size,
+            )
+        ),
+        "finance-totals": lambda: _j(
+            _api().finance_totals(_load_json(args.filter_json))
+        ),
+        "finance-cash-flow": lambda: _j(
+            _api().finance_cash_flow(
+                _load_json(args.filter_json),
+                page=args.page,
+                page_size=args.page_size,
+            )
+        ),
+        "finance-realization": lambda: _j(
+            _api().finance_realization(args.date)
+        ),
         # Analytics
-        "analytics": lambda: server.ozon_analytics_data(args.date_from, args.date_to, args.metrics_json, args.dimensions_json),
-        "analytics-stock": lambda: server.ozon_analytics_stock_on_warehouses(limit=args.limit),
-        "analytics-turnover": lambda: server.ozon_analytics_item_turnover(args.date_from, args.date_to, skus=args.skus),
+        "analytics": lambda: _j(
+            _api().analytics_data(
+                args.date_from,
+                args.date_to,
+                _load_json(args.metrics_json),
+                _load_json(args.dimensions_json),
+                filters=_load_json(args.filters_json) if args.filters_json else None,
+                sort=_load_json(args.sort_json) if args.sort_json else None,
+                limit=args.limit,
+                offset=args.offset,
+            )
+        ),
+        "analytics-stock": lambda: _j(
+            _api().analytics_stock_on_warehouses(
+                limit=args.limit,
+                offset=args.offset,
+                warehouse_type=args.warehouse_type,
+            )
+        ),
+        "analytics-turnover": lambda: _j(
+            _api().analytics_item_turnover(
+                args.date_from,
+                args.date_to,
+                sku=[int(s) for s in args.skus.split(",") if s.strip()] or None,
+            )
+        ),
         # Warehouses
-        "warehouses": lambda: server.ozon_warehouse_list(),
-        "delivery-methods": lambda: server.ozon_warehouse_delivery_methods(filter_json=args.filter_json),
+        "warehouses": lambda: _j(
+            _api().warehouse_list()
+        ),
+        "delivery-methods": lambda: _j(
+            _api().delivery_methods(
+                filter_dict=_filt(args.filter_json),
+                limit=args.limit,
+                offset=args.offset,
+            )
+        ),
         # Returns
-        "returns-fbo": lambda: server.ozon_returns_fbo(filter_json=args.filter_json, limit=args.limit),
-        "returns-fbs": lambda: server.ozon_returns_fbs(filter_json=args.filter_json, limit=args.limit),
-        "return-get": lambda: server.ozon_return_get(args.posting_number),
-        "returns-rfbs": lambda: server.ozon_return_rfbs_list(filter_json=args.filter_json),
-        "return-rfbs-get": lambda: server.ozon_return_rfbs_get(args.return_id),
-        "return-rfbs-approve": lambda: server.ozon_return_rfbs_approve(args.return_id, comment=args.comment),
-        "return-rfbs-reject": lambda: server.ozon_return_rfbs_reject(args.return_id, comment=args.comment),
+        "returns-fbo": lambda: _j(
+            _api().returns_fbo(
+                filter_dict=_filt(args.filter_json),
+                last_id=args.last_id,
+                limit=args.limit,
+            )
+        ),
+        "returns-fbs": lambda: _j(
+            _api().returns_fbs(
+                filter_dict=_filt(args.filter_json),
+                last_id=args.last_id,
+                limit=args.limit,
+            )
+        ),
+        "return-get": lambda: _j(
+            _api().return_get(args.posting_number)
+        ),
+        "returns-rfbs": lambda: _j(
+            _api().return_rfbs_list(
+                filter_dict=_filt(args.filter_json),
+                last_id=args.last_id,
+                limit=args.limit,
+            )
+        ),
+        "return-rfbs-get": lambda: _j(
+            _api().return_rfbs_get(args.return_id)
+        ),
+        "return-rfbs-approve": lambda: _j(
+            _api().return_rfbs_approve(args.return_id, comment=args.comment)
+        ),
+        "return-rfbs-reject": lambda: _j(
+            _api().return_rfbs_reject(
+                args.return_id,
+                comment=args.comment,
+                reject_reason_id=args.reject_reason_id,
+            )
+        ),
+        "return-rfbs-compensate": lambda: _j(
+            _api().return_rfbs_compensate(args.return_id, args.compensation_amount)
+        ),
         # Chats
-        "chats": lambda: server.ozon_chat_list(page=args.page),
-        "chat-history": lambda: server.ozon_chat_history(args.chat_id, limit=args.limit),
-        "chat-start": lambda: server.ozon_chat_start(args.posting_number),
-        "chat-send": lambda: server.ozon_chat_send_message(args.chat_id, args.message),
+        "chats": lambda: _j(
+            _api().chat_list(
+                chat_id_list=[s.strip() for s in args.chat_ids.split(",") if s.strip()] or None,
+                page=args.page,
+                page_size=args.page_size,
+            )
+        ),
+        "chat-history": lambda: _j(
+            _api().chat_history(
+                args.chat_id,
+                from_message_id=args.from_message_id,
+                limit=args.limit,
+                direction=args.direction,
+            )
+        ),
+        "chat-start": lambda: _j(
+            _api().chat_start(args.posting_number)
+        ),
+        "chat-send": lambda: _j(
+            _api().chat_send_message(args.chat_id, args.message)
+        ),
+        "chat-send-file": lambda: _j(
+            _api().chat_send_file(args.chat_id, args.base64_content, name=args.name)
+        ),
+        "chat-read": lambda: _j(
+            _api().chat_read(args.chat_id, args.from_message_id)
+        ),
         # Promotions
-        "promos": lambda: server.ozon_promo_available(),
-        "promo-candidates": lambda: server.ozon_promo_candidates(args.action_id),
-        "promo-products": lambda: server.ozon_promo_products(args.action_id),
-        "promo-hotsale": lambda: server.ozon_promo_hotsale_list(),
+        "promos": lambda: _j(
+            _api().promo_available()
+        ),
+        "promo-candidates": lambda: _j(
+            _api().promo_candidates(args.action_id, limit=args.limit, offset=args.offset)
+        ),
+        "promo-products": lambda: _j(
+            _api().promo_products(args.action_id, limit=args.limit, offset=args.offset)
+        ),
+        "promo-products-add": lambda: _j(
+            _api().promo_products_add(args.action_id, _load_json(args.products_json))
+        ),
+        "promo-products-remove": lambda: _j(
+            _api().promo_products_remove(
+                args.action_id,
+                [int(x) for x in args.product_ids.split(",") if x.strip()],
+            )
+        ),
+        "promo-hotsale": lambda: _j(
+            _api().promo_hotsale_list()
+        ),
         # Strategies
-        "strategies": lambda: server.ozon_strategy_list(),
-        "strategy-create": lambda: server.ozon_strategy_create(args.type, args.update_type, name=args.name),
-        "strategy-delete": lambda: server.ozon_strategy_delete(args.strategy_id),
+        "strategies": lambda: _j(
+            _api().strategy_list()
+        ),
+        "strategy-create": lambda: _j(
+            _api().strategy_create(args.type, args.update_type, name=args.name)
+        ),
+        "strategy-update": lambda: _j(
+            _api().strategy_update(args.strategy_id, **_load_json(args.payload_json))
+        ),
+        "strategy-delete": lambda: _j(
+            _api().strategy_delete(args.strategy_id)
+        ),
         # Rating
-        "rating": lambda: server.ozon_rating_summary(),
-        "rating-history": lambda: server.ozon_rating_history(args.date_from, args.date_to),
-        "quality-rating": lambda: server.ozon_quality_rating(args.date_from, args.date_to),
+        "rating": lambda: _j(
+            _api().rating_summary()
+        ),
+        "rating-history": lambda: _j(
+            _api().rating_history(
+                args.date_from,
+                args.date_to,
+                ratings=[s.strip() for s in args.ratings.split(",") if s.strip()] or None,
+            )
+        ),
+        "quality-rating": lambda: _j(
+            _api().quality_rating(
+                args.date_from,
+                args.date_to,
+                warehouse_id=args.warehouse_id,
+            )
+        ),
         # Reports
-        "report-create": lambda: server.ozon_report_create(args.report_type, params_json=args.params_json),
-        "report-info": lambda: server.ozon_report_info(args.code),
-        "report-list": lambda: server.ozon_report_list(page=args.page),
-        "report-download": lambda: server.ozon_report_download(args.code, output_path=args.output_path),
+        "report-create": lambda: _j(
+            _api().report_create(
+                args.report_type,
+                params=_filt(args.params_json),
+            )
+        ),
+        "report-info": lambda: _j(
+            _api().report_info(args.code)
+        ),
+        "report-list": lambda: _j(
+            _api().report_list(
+                page=args.page,
+                page_size=args.page_size,
+                report_type=args.report_type,
+            )
+        ),
+        "report-download": lambda: (
+            lambda data: _download(
+                data,
+                args.output_path or os.path.join(DEFAULT_DOCS_DIR, f"report_{args.code}"),
+            )
+        )(_api().report_download(args.code)),
         # Reviews
-        "reviews": lambda: server.ozon_reviews_list(filter_json=args.filter_json, limit=args.limit),
-        "review-info": lambda: server.ozon_review_info(args.review_id),
-        "review-comment": lambda: server.ozon_review_comment(args.review_id, args.text),
+        "reviews": lambda: _j(
+            _api().reviews_list(
+                filter_dict=_filt(args.filter_json),
+                sort_dir=args.sort_dir,
+                limit=args.limit,
+                offset=args.offset,
+            )
+        ),
+        "review-info": lambda: _j(
+            _api().review_info(args.review_id)
+        ),
+        "review-count": lambda: _j(
+            _api().review_count(filter_dict=_filt(args.filter_json))
+        ),
+        "review-comment": lambda: _j(
+            _api().review_comment(args.review_id, args.text)
+        ),
         # Questions
-        "questions": lambda: server.ozon_questions_list(filter_json=args.filter_json, limit=args.limit),
-        "question-answer": lambda: server.ozon_question_answer(args.question_id, args.answer),
+        "questions": lambda: _j(
+            _api().questions_list(
+                filter_dict=_filt(args.filter_json),
+                sort_dir=args.sort_dir,
+                limit=args.limit,
+                offset=args.offset,
+            )
+        ),
+        "question-answer": lambda: _j(
+            _api().question_answer(args.question_id, args.answer)
+        ),
+        "question-update": lambda: _j(
+            _api().question_update(args.question_id, args.answer)
+        ),
         # Cancellations
-        "cancellations": lambda: server.ozon_cancellation_list(filter_json=args.filter_json, limit=args.limit),
-        "cancellation-info": lambda: server.ozon_cancellation_info(args.cancellation_id),
-        "cancellation-approve": lambda: server.ozon_cancellation_approve(args.cancellation_id, comment=args.comment),
-        "cancellation-reject": lambda: server.ozon_cancellation_reject(args.cancellation_id, comment=args.comment),
+        "cancellations": lambda: _j(
+            _api().cancellation_list(
+                filter_dict=_filt(args.filter_json),
+                limit=args.limit,
+                offset=args.offset,
+            )
+        ),
+        "cancellation-info": lambda: _j(
+            _api().cancellation_info(args.cancellation_id)
+        ),
+        "cancellation-approve": lambda: _j(
+            _api().cancellation_approve(args.cancellation_id, comment=args.comment)
+        ),
+        "cancellation-reject": lambda: _j(
+            _api().cancellation_reject(args.cancellation_id, comment=args.comment)
+        ),
         # Certificates
-        "certificates": lambda: server.ozon_certificate_list(filter_json=args.filter_json),
-        "certificate-info": lambda: server.ozon_certificate_info(args.certificate_id),
-        "certificate-delete": lambda: server.ozon_certificate_delete(args.certificate_id),
+        "certificates": lambda: _j(
+            _api().certificate_list(
+                filter_dict=_filt(args.filter_json),
+                page=args.page,
+                page_size=args.page_size,
+            )
+        ),
+        "certificate-info": lambda: _j(
+            _api().certificate_info(args.certificate_id)
+        ),
+        "certificate-create": lambda: _j(
+            _api().certificate_create(
+                _load_json(args.files_json),
+                args.name,
+                args.type_code,
+            )
+        ),
+        "certificate-delete": lambda: _j(
+            _api().certificate_delete(args.certificate_id)
+        ),
+        "certificate-bind": lambda: _j(
+            _api().certificate_bind(
+                args.certificate_id,
+                [int(x) for x in args.product_ids.split(",") if x.strip()],
+            )
+        ),
+        "certificate-unbind": lambda: _j(
+            _api().certificate_unbind(
+                args.certificate_id,
+                [int(x) for x in args.product_ids.split(",") if x.strip()],
+            )
+        ),
         # Barcodes
-        "barcode-generate": lambda: server.ozon_barcode_generate(args.product_ids),
-        "barcode-add": lambda: server.ozon_barcode_add(args.barcodes_json),
+        "barcode-generate": lambda: _j(
+            _api().barcode_generate([int(x) for x in args.product_ids.split(",") if x.strip()])
+        ),
+        "barcode-add": lambda: _j(
+            _api().barcode_add(_load_json(args.barcodes_json))
+        ),
         # Brands
-        "brands": lambda: server.ozon_brand_list(),
+        "brands": lambda: _j(
+            _api().brand_list(page=args.page, page_size=args.page_size)
+        ),
     }
 
     print(handlers[args.command]())
