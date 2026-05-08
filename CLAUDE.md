@@ -28,17 +28,66 @@ GitHub Actions: `.github/workflows/test.yml`, `runs-on: self-hosted`. Токен
 src/mcp_server_ozon_seller/
 ├── __init__.py     # main(), версия
 ├── __main__.py     # python -m entry point
-├── server.py       # FastMCP, все tools (~120 tools)
-├── ozon_api.py     # HTTP-клиент Ozon Seller API (~120 методов)
-├── models.py       # Pydantic-модели для валидации в тестах
-└── cli.py          # CLI entry point (argparse, ~80 subcommands)
+├── _shared.py      # FastMCP instance, хелперы (_get_api, _to_json, _parse_json, _safe_output_path, _save_bytes)
+├── server.py       # 3 MCP tools: ozon_search, ozon_execute, ozon_execute_file
+├── actions.py      # Каталог 111 действий (Action dataclass, ACTIONS dict)
+├── models.py       # Pydantic модели параметров (75 классов, Field(description=...))
+├── ozon_api.py     # HTTP-клиент Ozon Seller API (~90 методов)
+└── cli.py          # CLI-интерфейс (111 субкоманд)
+docs/
+├── products.md     # 21 действие
+├── fbs.md          # 17 действий
+├── fbo.md          # 9 действий
+├── categories.md   # 4 действия
+├── finance.md      # 4 действия
+├── analytics.md    # 3 действия
+├── warehouses.md   # 2 действия
+├── returns.md      # 8 действий
+├── chats.md        # 6 действий
+├── promos.md       # 6 действий
+├── strategies.md   # 4 действия
+├── rating.md       # 3 действия
+├── reports.md      # 4 действия
+├── reviews.md      # 4 действия
+├── questions.md    # 3 действия
+├── cancellations.md# 4 действия
+├── certificates.md # 6 действий
+├── barcodes.md     # 2 действия
+└── brands.md       # 1 действие
 ```
+
+### Паттерн Search + Execute
+
+Сервер предоставляет 3 MCP-инструмента вместо 111 отдельных. Все 111 действий доступны через каталог:
+
+- `ozon_search(query, domain?, limit?)` — поиск действий по ключевым словам
+- `ozon_execute(action, params_json)` — выполнение действия по ID
+- `ozon_execute_file(action, file_path, params_json)` — скачивание файла
+
+Каталог (`actions.py`) хранит для каждого действия: ID, домен, описание, Pydantic-модель параметров, имя метода API, флаги (destructive, file), ключевые слова для поиска.
+
+### Добавление нового действия
+
+1. Добавить метод в `ozon_api.py`
+2. Если нужна новая модель параметров — добавить в `models.py` с `Field(description=...)`
+3. Добавить `Action(...)` в `_ACTIONS_LIST` в `actions.py`
+4. Добавить CLI-команду в `cli.py` (subparser + handler) с `help=` на каждом аргументе
+5. Добавить строку в соответствующий файл `docs/<domain>.md`
 
 ### Ozon Seller API
 
 - Документация: https://docs.ozon.ru/api/seller/
 - Base URL: `https://api-seller.ozon.ru`
 - Авторизация: `Client-Id` + `Api-Key` в заголовках
+
+### Переменные окружения
+
+| Переменная | Обязательная | По умолчанию | Описание |
+|-----------|-------------|-------------|----------|
+| `OZON_CLIENT_ID` | да | — | Client ID продавца |
+| `OZON_API_KEY` | да | — | API Key продавца |
+| `OZON_TIMEOUT` | нет | `30` | Таймаут обычных запросов (секунды) |
+| `OZON_FILE_TIMEOUT` | нет | `60` | Таймаут файловых операций (секунды) |
 
 ### Обновление MCP-сервера
 
@@ -74,3 +123,4 @@ src/mcp_server_ozon_seller/
 - **ПЕРЕД КАЖДЫМ КОММИТОМ** проверять все исходные файлы, тесты и документацию на наличие реальных персональных данных (ИНН, номера счетов, имена, адреса, телефоны, email). Заменять на вымышленные.
 - **В КАЖДОМ PR** обновлять версию в `pyproject.toml` и `src/mcp_server_ozon_seller/__init__.py` (patch для фиксов, minor для новых фич).
 - **ПЕРЕД публикацией в MCP-реестр** обязательно запускать `mcp-publisher validate` — проверяет `server.json` на соответствие схеме реестра (лимиты длины полей и т.д.).
+- Пути для записи файлов — только через `_safe_output_path()` (home или temp). Dotfiles под home запрещены.
