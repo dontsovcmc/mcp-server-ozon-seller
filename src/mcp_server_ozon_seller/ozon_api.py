@@ -1,7 +1,7 @@
 """HTTP-клиент Ozon Seller API (https://docs.ozon.ru/api/seller/)."""
 
-import time
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 import requests

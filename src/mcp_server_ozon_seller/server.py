@@ -1,6 +1,6 @@
 """MCP server for Ozon Seller API — search + execute pattern."""
 
-from ._shared import mcp, _get_api, _to_json, _parse_json, _save_bytes
+from ._shared import _get_api, _parse_json, _save_bytes, _to_json, mcp
 
 
 def _search_actions(query: str, domain: str = "", limit: int = 10) -> list[dict]:

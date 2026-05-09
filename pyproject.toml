@@ -1,6 +1,6 @@
 [project]
 name = "mcp-server-ozon-seller"
-version = "0.3.0"
+version = "0.3.1"
 description = "MCP server for Ozon Seller API — products, FBS/FBO, finance, analytics, returns"
 readme = "README.md"
 license = {text = "MIT"}
@@ -24,6 +24,12 @@ packages = ["src/mcp_server_ozon_seller"]
 
 [project.optional-dependencies]
 test = ["pytest>=8.0", "pytest-asyncio>=0.21", "anyio>=4.0"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
