@@ -63,19 +63,22 @@ def _safe_output_path(path: str) -> str:
     Only allows paths under home directory or system temp.
     Rejects dotfiles/dotdirs under home.
     """
-    real = os.path.realpath(os.path.expanduser(path))
+    resolved = os.path.realpath(os.path.expanduser(path))
     home = os.path.realpath(os.path.expanduser("~"))
-    tmp = os.path.realpath(tempfile.gettempdir())
+    tmp_dirs = {os.path.realpath(tempfile.gettempdir())}
+    if os.path.isdir("/tmp"):
+        tmp_dirs.add(os.path.realpath("/tmp"))
 
-    if not (real.startswith(home + os.sep) or real.startswith(tmp + os.sep) or real == tmp):
-        raise RuntimeError(f"Path not allowed: {path}. Only home directory or temp allowed.")
+    is_under_home = resolved.startswith(home + os.sep)
+    is_under_tmp = any(resolved.startswith(d + os.sep) for d in tmp_dirs)
 
-    if real.startswith(home + os.sep):
-        relative = real[len(home):]
-        if os.sep + "." in relative:
-            raise RuntimeError(f"Writing to dotfiles/dotdirs is not allowed: {path}")
+    if not (is_under_home or is_under_tmp):
+        raise ValueError(f"Output path must be under home or temp directory: {path}")
 
-    return real
+    if is_under_home and os.sep + "." in resolved[len(home):]:
+        raise ValueError(f"Writing to hidden files/directories is not allowed: {path}")
+
+    return resolved
 
 
 def _save_bytes(data: bytes, path: str) -> str:

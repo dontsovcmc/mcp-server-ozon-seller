@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ── Shared / Reusable ─────────────────────────────────────────────────
 
 
@@ -141,7 +140,9 @@ class ProductDescriptionParams(BaseModel):
 class ProductAttributesParams(BaseModel):
     """Parameters for getting product attributes (extends FilterLastIdLimitParams with sort_dir)."""
 
-    filter_dict: dict | None = Field(None, description="Filter object (e.g. {offer_id: [...], product_id: [...], visibility: 'ALL'})")
+    filter_dict: dict | None = Field(
+        None, description="Filter object ({offer_id: [...], product_id: [...], visibility: 'ALL'})",
+    )
     last_id: str = Field("", description="Cursor for pagination")
     limit: int = Field(100, description="Number of items to return per page")
     sort_dir: str = Field("ASC", description="Sort direction: 'ASC' or 'DESC'")

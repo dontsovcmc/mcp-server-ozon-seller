@@ -6,9 +6,9 @@ Without arguments starts MCP server (stdio transport).
 
 import argparse
 import json
+import logging
 import os
 import sys
-import logging
 
 from . import __version__
 
@@ -48,7 +48,7 @@ def _load_json(raw: str) -> dict | list:
         sys.exit(1)
 
 
-def _j(data) -> str:
+def _to_json(data) -> str:
     """Pretty-print data as JSON."""
     return json.dumps(data, ensure_ascii=False, indent=2)
 
@@ -75,7 +75,7 @@ def _download(data: bytes, path: str) -> str:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "wb") as f:
         f.write(data)
-    return _j({"path": os.path.abspath(path), "size": len(data)})
+    return _to_json({"path": os.path.abspath(path), "size": len(data)})
 
 
 # ── Entry point ────────────────────────────────────────────────────
@@ -594,105 +594,105 @@ def main(argv: list[str] | None = None) -> None:
 
     handlers = {
         # Products
-        "product-list": lambda: _j(
+        "product-list": lambda: _to_json(
             _api().product_list(
                 filter_dict=_filt(args.filter_json),
                 last_id=args.last_id,
                 limit=args.limit,
             )
         ),
-        "product-info": lambda: _j(
+        "product-info": lambda: _to_json(
             _api().product_info(
                 offer_id=args.offer_id,
                 product_id=args.product_id,
                 sku=args.sku,
             )
         ),
-        "product-info-list": lambda: _j(
+        "product-info-list": lambda: _to_json(
             _api().product_info_list(
                 offer_id=[s.strip() for s in args.offer_ids.split(",") if s.strip()] or None,
                 product_id=[int(s) for s in args.product_ids.split(",") if s.strip()] or None,
                 sku=[int(s) for s in args.skus.split(",") if s.strip()] or None,
             )
         ),
-        "product-import": lambda: _j(
+        "product-import": lambda: _to_json(
             _api().product_import(_load_json(args.items_json))
         ),
-        "product-import-info": lambda: _j(
+        "product-import-info": lambda: _to_json(
             _api().product_import_info(args.task_id)
         ),
-        "product-update": lambda: _j(
+        "product-update": lambda: _to_json(
             _api().product_update(_load_json(args.items_json))
         ),
-        "product-prices-update": lambda: _j(
+        "product-prices-update": lambda: _to_json(
             _api().product_prices_update(_load_json(args.prices_json))
         ),
-        "product-stocks-update": lambda: _j(
+        "product-stocks-update": lambda: _to_json(
             _api().product_stocks_update(_load_json(args.stocks_json))
         ),
-        "product-stocks-info": lambda: _j(
+        "product-stocks-info": lambda: _to_json(
             _api().product_stocks_info(
                 filter_dict=_filt(args.filter_json),
                 last_id=args.last_id,
                 limit=args.limit,
             )
         ),
-        "product-prices-info": lambda: _j(
+        "product-prices-info": lambda: _to_json(
             _api().product_prices_info(
                 filter_dict=_filt(args.filter_json),
                 last_id=args.last_id,
                 limit=args.limit,
             )
         ),
-        "product-description": lambda: _j(
+        "product-description": lambda: _to_json(
             _api().product_description(
                 offer_id=args.offer_id,
                 product_id=args.product_id,
             )
         ),
-        "product-attributes": lambda: _j(
+        "product-attributes": lambda: _to_json(
             _api().product_attributes(
                 filter_dict=_filt(args.filter_json),
                 last_id=args.last_id,
                 limit=args.limit,
             )
         ),
-        "product-archive": lambda: _j(
+        "product-archive": lambda: _to_json(
             _api().product_archive([int(x) for x in args.product_ids.split(",") if x.strip()])
         ),
-        "product-unarchive": lambda: _j(
+        "product-unarchive": lambda: _to_json(
             _api().product_unarchive([int(x) for x in args.product_ids.split(",") if x.strip()])
         ),
-        "product-delete": lambda: _j(
+        "product-delete": lambda: _to_json(
             _api().product_delete([int(x) for x in args.product_ids.split(",") if x.strip()])
         ),
-        "product-pictures-import": lambda: _j(
+        "product-pictures-import": lambda: _to_json(
             _api().product_pictures_import(_load_json(args.images_json))
         ),
-        "product-pictures-info": lambda: _j(
+        "product-pictures-info": lambda: _to_json(
             _api().product_pictures_info([int(x) for x in args.product_ids.split(",") if x.strip()])
         ),
-        "product-geo-restrictions": lambda: _j(
+        "product-geo-restrictions": lambda: _to_json(
             _api().product_geo_restrictions(
                 filter_dict=_filt(args.filter_json),
                 last_id=args.last_id,
                 limit=args.limit,
             )
         ),
-        "product-rating": lambda: _j(
+        "product-rating": lambda: _to_json(
             _api().product_rating([int(x) for x in args.skus.split(",") if x.strip()])
         ),
-        "product-related-sku": lambda: _j(
+        "product-related-sku": lambda: _to_json(
             _api().product_related_sku(_load_json(args.items_json))
         ),
-        "product-digital-codes": lambda: _j(
+        "product-digital-codes": lambda: _to_json(
             _api().product_upload_digital_codes(
                 digital_codes=_load_json(args.codes_json),
                 product_id=args.product_id,
             )
         ),
         # FBS
-        "fbs-list": lambda: _j(
+        "fbs-list": lambda: _to_json(
             _api().fbs_postings_list(
                 filter_dict=_filt(args.filter_json),
                 dir=args.dir,
@@ -700,20 +700,20 @@ def main(argv: list[str] | None = None) -> None:
                 offset=args.offset,
             )
         ),
-        "fbs-get": lambda: _j(
+        "fbs-get": lambda: _to_json(
             _api().fbs_posting_get(args.posting_number)
         ),
-        "fbs-cancel": lambda: _j(
+        "fbs-cancel": lambda: _to_json(
             _api().fbs_posting_cancel(
                 args.posting_number,
                 args.cancel_reason_id,
                 args.message,
             )
         ),
-        "fbs-cancel-reasons": lambda: _j(
+        "fbs-cancel-reasons": lambda: _to_json(
             _api().fbs_cancel_reasons()
         ),
-        "fbs-tracking": lambda: _j(
+        "fbs-tracking": lambda: _to_json(
             _api().fbs_posting_tracking(args.posting_number, args.tracking_number)
         ),
         "fbs-label": lambda: (
@@ -722,10 +722,10 @@ def main(argv: list[str] | None = None) -> None:
                 os.path.join(args.output_dir, f"{args.posting_number}.pdf"),
             )
         )(_api().get_label_pdf(args.posting_number)),
-        "fbs-act-create": lambda: _j(
+        "fbs-act-create": lambda: _to_json(
             _api().fbs_act_create(args.delivery_method_id, args.departure_date)
         ),
-        "fbs-act-status": lambda: _j(
+        "fbs-act-status": lambda: _to_json(
             _api().fbs_act_status(args.id)
         ),
         "fbs-act-pdf": lambda: (
@@ -746,28 +746,28 @@ def main(argv: list[str] | None = None) -> None:
                 args.output_path or os.path.join(DEFAULT_DOCS_DIR, f"container_{args.id}.pdf"),
             )
         )(_api().fbs_container_labels(args.id)),
-        "fbs-delivered": lambda: _j(
+        "fbs-delivered": lambda: _to_json(
             _api().fbs_posting_delivered(args.posting_number)
         ),
-        "fbs-last-mile": lambda: _j(
+        "fbs-last-mile": lambda: _to_json(
             _api().fbs_posting_last_mile(args.posting_number, _load_json(args.items_json))
         ),
-        "fbs-timeslot-restrictions": lambda: _j(
+        "fbs-timeslot-restrictions": lambda: _to_json(
             _api().fbs_timeslot_restrictions(args.delivery_method_id)
         ),
-        "fbs-restrictions": lambda: _j(
+        "fbs-restrictions": lambda: _to_json(
             _api().fbs_restrictions(args.posting_number)
         ),
-        "fbs-country-set": lambda: _j(
+        "fbs-country-set": lambda: _to_json(
             _api().fbs_product_country_set(
                 args.posting_number, args.product_id, args.country_iso_code,
             )
         ),
-        "fbs-country-list": lambda: _j(
+        "fbs-country-list": lambda: _to_json(
             _api().fbs_product_country_list()
         ),
         # FBO
-        "fbo-list": lambda: _j(
+        "fbo-list": lambda: _to_json(
             _api().fbo_postings_list(
                 filter_dict=_filt(args.filter_json),
                 dir=args.dir,
@@ -775,46 +775,46 @@ def main(argv: list[str] | None = None) -> None:
                 offset=args.offset,
             )
         ),
-        "fbo-get": lambda: _j(
+        "fbo-get": lambda: _to_json(
             _api().fbo_posting_get(args.posting_number)
         ),
-        "fbo-supply-create": lambda: _j(
+        "fbo-supply-create": lambda: _to_json(
             _api().fbo_supply_create(_load_json(args.items_json), args.warehouse_id)
         ),
-        "fbo-supply-get": lambda: _j(
+        "fbo-supply-get": lambda: _to_json(
             _api().fbo_supply_get(args.supply_order_id)
         ),
-        "fbo-supply-list": lambda: _j(
+        "fbo-supply-list": lambda: _to_json(
             _api().fbo_supply_list(
                 filter_dict=_filt(args.filter_json),
                 page=args.page,
                 page_size=args.page_size,
             )
         ),
-        "fbo-supply-cancel": lambda: _j(
+        "fbo-supply-cancel": lambda: _to_json(
             _api().fbo_supply_cancel(args.supply_order_id)
         ),
-        "fbo-supply-items": lambda: _j(
+        "fbo-supply-items": lambda: _to_json(
             _api().fbo_supply_items(args.supply_order_id)
         ),
-        "fbo-supply-shipments": lambda: _j(
+        "fbo-supply-shipments": lambda: _to_json(
             _api().fbo_supply_shipments(args.supply_order_id)
         ),
-        "fbo-warehouse-workload": lambda: _j(
+        "fbo-warehouse-workload": lambda: _to_json(
             _api().fbo_warehouse_workload(args.warehouse_id)
         ),
         # Categories
-        "categories": lambda: _j(
+        "categories": lambda: _to_json(
             _api().category_tree(language=args.language)
         ),
-        "category-attributes": lambda: _j(
+        "category-attributes": lambda: _to_json(
             _api().category_attributes(
                 args.description_category_id,
                 language=args.language,
                 type_id=args.type_id,
             )
         ),
-        "category-values": lambda: _j(
+        "category-values": lambda: _to_json(
             _api().category_attribute_values(
                 args.attribute_id,
                 args.description_category_id,
@@ -822,7 +822,7 @@ def main(argv: list[str] | None = None) -> None:
                 last_value_id=args.last_value_id,
             )
         ),
-        "category-values-search": lambda: _j(
+        "category-values-search": lambda: _to_json(
             _api().category_attribute_values_search(
                 args.attribute_id,
                 args.description_category_id,
@@ -831,28 +831,28 @@ def main(argv: list[str] | None = None) -> None:
             )
         ),
         # Finance
-        "finance-transactions": lambda: _j(
+        "finance-transactions": lambda: _to_json(
             _api().finance_transactions(
                 _load_json(args.filter_json),
                 page=args.page,
                 page_size=args.page_size,
             )
         ),
-        "finance-totals": lambda: _j(
+        "finance-totals": lambda: _to_json(
             _api().finance_totals(_load_json(args.filter_json))
         ),
-        "finance-cash-flow": lambda: _j(
+        "finance-cash-flow": lambda: _to_json(
             _api().finance_cash_flow(
                 _load_json(args.filter_json),
                 page=args.page,
                 page_size=args.page_size,
             )
         ),
-        "finance-realization": lambda: _j(
+        "finance-realization": lambda: _to_json(
             _api().finance_realization(args.date)
         ),
         # Analytics
-        "analytics": lambda: _j(
+        "analytics": lambda: _to_json(
             _api().analytics_data(
                 args.date_from,
                 args.date_to,
@@ -864,14 +864,14 @@ def main(argv: list[str] | None = None) -> None:
                 offset=args.offset,
             )
         ),
-        "analytics-stock": lambda: _j(
+        "analytics-stock": lambda: _to_json(
             _api().analytics_stock_on_warehouses(
                 limit=args.limit,
                 offset=args.offset,
                 warehouse_type=args.warehouse_type,
             )
         ),
-        "analytics-turnover": lambda: _j(
+        "analytics-turnover": lambda: _to_json(
             _api().analytics_item_turnover(
                 args.date_from,
                 args.date_to,
@@ -879,10 +879,10 @@ def main(argv: list[str] | None = None) -> None:
             )
         ),
         # Warehouses
-        "warehouses": lambda: _j(
+        "warehouses": lambda: _to_json(
             _api().warehouse_list()
         ),
-        "delivery-methods": lambda: _j(
+        "delivery-methods": lambda: _to_json(
             _api().delivery_methods(
                 filter_dict=_filt(args.filter_json),
                 limit=args.limit,
@@ -890,55 +890,55 @@ def main(argv: list[str] | None = None) -> None:
             )
         ),
         # Returns
-        "returns-fbo": lambda: _j(
+        "returns-fbo": lambda: _to_json(
             _api().returns_fbo(
                 filter_dict=_filt(args.filter_json),
                 last_id=args.last_id,
                 limit=args.limit,
             )
         ),
-        "returns-fbs": lambda: _j(
+        "returns-fbs": lambda: _to_json(
             _api().returns_fbs(
                 filter_dict=_filt(args.filter_json),
                 last_id=args.last_id,
                 limit=args.limit,
             )
         ),
-        "return-get": lambda: _j(
+        "return-get": lambda: _to_json(
             _api().return_get(args.posting_number)
         ),
-        "returns-rfbs": lambda: _j(
+        "returns-rfbs": lambda: _to_json(
             _api().return_rfbs_list(
                 filter_dict=_filt(args.filter_json),
                 last_id=args.last_id,
                 limit=args.limit,
             )
         ),
-        "return-rfbs-get": lambda: _j(
+        "return-rfbs-get": lambda: _to_json(
             _api().return_rfbs_get(args.return_id)
         ),
-        "return-rfbs-approve": lambda: _j(
+        "return-rfbs-approve": lambda: _to_json(
             _api().return_rfbs_approve(args.return_id, comment=args.comment)
         ),
-        "return-rfbs-reject": lambda: _j(
+        "return-rfbs-reject": lambda: _to_json(
             _api().return_rfbs_reject(
                 args.return_id,
                 comment=args.comment,
                 reject_reason_id=args.reject_reason_id,
             )
         ),
-        "return-rfbs-compensate": lambda: _j(
+        "return-rfbs-compensate": lambda: _to_json(
             _api().return_rfbs_compensate(args.return_id, args.compensation_amount)
         ),
         # Chats
-        "chats": lambda: _j(
+        "chats": lambda: _to_json(
             _api().chat_list(
                 chat_id_list=[s.strip() for s in args.chat_ids.split(",") if s.strip()] or None,
                 page=args.page,
                 page_size=args.page_size,
             )
         ),
-        "chat-history": lambda: _j(
+        "chat-history": lambda: _to_json(
             _api().chat_history(
                 args.chat_id,
                 from_message_id=args.from_message_id,
@@ -946,65 +946,65 @@ def main(argv: list[str] | None = None) -> None:
                 direction=args.direction,
             )
         ),
-        "chat-start": lambda: _j(
+        "chat-start": lambda: _to_json(
             _api().chat_start(args.posting_number)
         ),
-        "chat-send": lambda: _j(
+        "chat-send": lambda: _to_json(
             _api().chat_send_message(args.chat_id, args.message)
         ),
-        "chat-send-file": lambda: _j(
+        "chat-send-file": lambda: _to_json(
             _api().chat_send_file(args.chat_id, args.base64_content, name=args.name)
         ),
-        "chat-read": lambda: _j(
+        "chat-read": lambda: _to_json(
             _api().chat_read(args.chat_id, args.from_message_id)
         ),
         # Promotions
-        "promos": lambda: _j(
+        "promos": lambda: _to_json(
             _api().promo_available()
         ),
-        "promo-candidates": lambda: _j(
+        "promo-candidates": lambda: _to_json(
             _api().promo_candidates(args.action_id, limit=args.limit, offset=args.offset)
         ),
-        "promo-products": lambda: _j(
+        "promo-products": lambda: _to_json(
             _api().promo_products(args.action_id, limit=args.limit, offset=args.offset)
         ),
-        "promo-products-add": lambda: _j(
+        "promo-products-add": lambda: _to_json(
             _api().promo_products_add(args.action_id, _load_json(args.products_json))
         ),
-        "promo-products-remove": lambda: _j(
+        "promo-products-remove": lambda: _to_json(
             _api().promo_products_remove(
                 args.action_id,
                 [int(x) for x in args.product_ids.split(",") if x.strip()],
             )
         ),
-        "promo-hotsale": lambda: _j(
+        "promo-hotsale": lambda: _to_json(
             _api().promo_hotsale_list()
         ),
         # Strategies
-        "strategies": lambda: _j(
+        "strategies": lambda: _to_json(
             _api().strategy_list()
         ),
-        "strategy-create": lambda: _j(
+        "strategy-create": lambda: _to_json(
             _api().strategy_create(args.type, args.update_type, name=args.name)
         ),
-        "strategy-update": lambda: _j(
+        "strategy-update": lambda: _to_json(
             _api().strategy_update(args.strategy_id, **_load_json(args.payload_json))
         ),
-        "strategy-delete": lambda: _j(
+        "strategy-delete": lambda: _to_json(
             _api().strategy_delete(args.strategy_id)
         ),
         # Rating
-        "rating": lambda: _j(
+        "rating": lambda: _to_json(
             _api().rating_summary()
         ),
-        "rating-history": lambda: _j(
+        "rating-history": lambda: _to_json(
             _api().rating_history(
                 args.date_from,
                 args.date_to,
                 ratings=[s.strip() for s in args.ratings.split(",") if s.strip()] or None,
             )
         ),
-        "quality-rating": lambda: _j(
+        "quality-rating": lambda: _to_json(
             _api().quality_rating(
                 args.date_from,
                 args.date_to,
@@ -1012,16 +1012,16 @@ def main(argv: list[str] | None = None) -> None:
             )
         ),
         # Reports
-        "report-create": lambda: _j(
+        "report-create": lambda: _to_json(
             _api().report_create(
                 args.report_type,
                 params=_filt(args.params_json),
             )
         ),
-        "report-info": lambda: _j(
+        "report-info": lambda: _to_json(
             _api().report_info(args.code)
         ),
-        "report-list": lambda: _j(
+        "report-list": lambda: _to_json(
             _api().report_list(
                 page=args.page,
                 page_size=args.page_size,
@@ -1035,7 +1035,7 @@ def main(argv: list[str] | None = None) -> None:
             )
         )(_api().report_download(args.code)),
         # Reviews
-        "reviews": lambda: _j(
+        "reviews": lambda: _to_json(
             _api().reviews_list(
                 filter_dict=_filt(args.filter_json),
                 sort_dir=args.sort_dir,
@@ -1043,17 +1043,17 @@ def main(argv: list[str] | None = None) -> None:
                 offset=args.offset,
             )
         ),
-        "review-info": lambda: _j(
+        "review-info": lambda: _to_json(
             _api().review_info(args.review_id)
         ),
-        "review-count": lambda: _j(
+        "review-count": lambda: _to_json(
             _api().review_count(filter_dict=_filt(args.filter_json))
         ),
-        "review-comment": lambda: _j(
+        "review-comment": lambda: _to_json(
             _api().review_comment(args.review_id, args.text)
         ),
         # Questions
-        "questions": lambda: _j(
+        "questions": lambda: _to_json(
             _api().questions_list(
                 filter_dict=_filt(args.filter_json),
                 sort_dir=args.sort_dir,
@@ -1061,71 +1061,71 @@ def main(argv: list[str] | None = None) -> None:
                 offset=args.offset,
             )
         ),
-        "question-answer": lambda: _j(
+        "question-answer": lambda: _to_json(
             _api().question_answer(args.question_id, args.answer)
         ),
-        "question-update": lambda: _j(
+        "question-update": lambda: _to_json(
             _api().question_update(args.question_id, args.answer)
         ),
         # Cancellations
-        "cancellations": lambda: _j(
+        "cancellations": lambda: _to_json(
             _api().cancellation_list(
                 filter_dict=_filt(args.filter_json),
                 limit=args.limit,
                 offset=args.offset,
             )
         ),
-        "cancellation-info": lambda: _j(
+        "cancellation-info": lambda: _to_json(
             _api().cancellation_info(args.cancellation_id)
         ),
-        "cancellation-approve": lambda: _j(
+        "cancellation-approve": lambda: _to_json(
             _api().cancellation_approve(args.cancellation_id, comment=args.comment)
         ),
-        "cancellation-reject": lambda: _j(
+        "cancellation-reject": lambda: _to_json(
             _api().cancellation_reject(args.cancellation_id, comment=args.comment)
         ),
         # Certificates
-        "certificates": lambda: _j(
+        "certificates": lambda: _to_json(
             _api().certificate_list(
                 filter_dict=_filt(args.filter_json),
                 page=args.page,
                 page_size=args.page_size,
             )
         ),
-        "certificate-info": lambda: _j(
+        "certificate-info": lambda: _to_json(
             _api().certificate_info(args.certificate_id)
         ),
-        "certificate-create": lambda: _j(
+        "certificate-create": lambda: _to_json(
             _api().certificate_create(
                 _load_json(args.files_json),
                 args.name,
                 args.type_code,
             )
         ),
-        "certificate-delete": lambda: _j(
+        "certificate-delete": lambda: _to_json(
             _api().certificate_delete(args.certificate_id)
         ),
-        "certificate-bind": lambda: _j(
+        "certificate-bind": lambda: _to_json(
             _api().certificate_bind(
                 args.certificate_id,
                 [int(x) for x in args.product_ids.split(",") if x.strip()],
             )
         ),
-        "certificate-unbind": lambda: _j(
+        "certificate-unbind": lambda: _to_json(
             _api().certificate_unbind(
                 args.certificate_id,
                 [int(x) for x in args.product_ids.split(",") if x.strip()],
             )
         ),
         # Barcodes
-        "barcode-generate": lambda: _j(
+        "barcode-generate": lambda: _to_json(
             _api().barcode_generate([int(x) for x in args.product_ids.split(",") if x.strip()])
         ),
-        "barcode-add": lambda: _j(
+        "barcode-add": lambda: _to_json(
             _api().barcode_add(_load_json(args.barcodes_json))
         ),
         # Brands
-        "brands": lambda: _j(
+        "brands": lambda: _to_json(
             _api().brand_list(page=args.page, page_size=args.page_size)
         ),
     }

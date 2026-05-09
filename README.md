@@ -2,258 +2,251 @@
 
 # mcp-server-ozon-seller
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/dontsovcmc/mcp-server-ozon-seller)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue)](https://github.com/dontsovcmc/mcp-server-ozon-seller)
 
-MCP-сервер для Ozon Seller API. Полное покрытие API: товары, заказы FBS/FBO, финансы, аналитика, возвраты, чаты, акции, отзывы и многое другое.
+MCP-сервер, CLI-утилита и библиотека Pydantic-моделей для [Ozon Seller API](https://docs.ozon.ru/api/seller/).
 
-## Возможности
+- **MCP-сервер** — интеграция с Claude Code, Claude Desktop и другими MCP-клиентами
+- **CLI-утилита** — работа с API из терминала, скрипты и автоматизация
+- **Pydantic-модели** — типизированные модели API для использования в своих Python-программах
 
-### Товары (Products)
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_product_list` | `product-list` | Список товаров |
-| `ozon_product_info` | `product-info` | Информация о товаре |
-| `ozon_product_info_list` | `product-info-list` | Информация о нескольких товарах |
-| `ozon_product_import` | `product-import` | Импорт/создание товаров |
-| `ozon_product_import_info` | `product-import-info` | Статус импорта |
-| `ozon_product_update` | `product-update` | Обновить товары |
-| `ozon_product_prices_update` | `product-prices-update` | Обновить цены |
-| `ozon_product_stocks_update` | `product-stocks-update` | Обновить остатки FBS |
-| `ozon_product_stocks_info` | `product-stocks-info` | Информация об остатках |
-| `ozon_product_prices_info` | `product-prices-info` | Информация о ценах |
-| `ozon_product_description` | `product-description` | Описание товара |
-| `ozon_product_attributes` | `product-attributes` | Атрибуты товаров |
-| `ozon_product_archive` | `product-archive` | Архивировать товары |
-| `ozon_product_unarchive` | `product-unarchive` | Разархивировать товары |
-| `ozon_product_delete` | `product-delete` | Удалить товары |
-| `ozon_product_pictures_import` | — | Импорт изображений |
-| `ozon_product_pictures_info` | — | Статус загрузки изображений |
-| `ozon_product_geo_restrictions` | — | Гео-ограничения |
-| `ozon_product_rating` | `product-rating` | Контент-рейтинг по SKU |
-| `ozon_product_related_sku` | `product-related-sku` | Связанные SKU (FBO/FBS) |
-| `ozon_product_upload_digital_codes` | — | Загрузить коды активации |
+Все данные остаются на вашем компьютере — ключи API никуда не передаются.
 
-### FBS-отправления
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_unfulfilled_orders` | `list` | Несобранные FBS-заказы |
-| `ozon_labels_pdf` | `labels` | Скачать PDF-этикетки |
-| `ozon_ship_orders` | `ship` | Собрать заказы |
-| `ozon_fbs_postings_list` | `fbs-list` | Список FBS-отправлений с фильтрами |
-| `ozon_fbs_posting_get` | `fbs-get` | Детали отправления |
-| `ozon_fbs_posting_ship` | `fbs-ship` | Собрать конкретное отправление |
-| `ozon_fbs_posting_cancel` | `fbs-cancel` | Отменить отправление |
-| `ozon_fbs_cancel_reasons` | `fbs-cancel-reasons` | Причины отмены |
-| `ozon_fbs_posting_tracking` | `fbs-tracking` | Установить трек-номер |
-| `ozon_fbs_posting_label` | `fbs-label` | Скачать этикетку |
-| `ozon_fbs_act_create` | `fbs-act-create` | Создать акт |
-| `ozon_fbs_act_status` | `fbs-act-status` | Статус акта |
-| `ozon_fbs_act_pdf` | `fbs-act-pdf` | Скачать PDF акта |
-| `ozon_fbs_digital_act_pdf` | — | Электронный акт |
-| `ozon_fbs_container_labels` | — | Этикетки контейнера |
-| `ozon_fbs_posting_delivered` | — | Подтвердить доставку (rFBS) |
-| `ozon_fbs_posting_last_mile` | — | Отгрузить последняя миля |
-| `ozon_fbs_timeslot_restrictions` | — | Ограничения таймслота |
-| `ozon_fbs_restrictions` | `fbs-restrictions` | Ограничения отправления |
-| `ozon_fbs_product_country_set` | — | Установить страну |
-| `ozon_fbs_product_country_list` | `fbs-country-list` | Список стран |
+## Оглавление
 
-### FBO
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_fbo_postings_list` | `fbo-list` | Список FBO-отправлений |
-| `ozon_fbo_posting_get` | `fbo-get` | Детали FBO-отправления |
-| `ozon_fbo_supply_create` | — | Создать поставку |
-| `ozon_fbo_supply_get` | `fbo-supply-get` | Детали поставки |
-| `ozon_fbo_supply_list` | `fbo-supply-list` | Список поставок |
-| `ozon_fbo_supply_cancel` | `fbo-supply-cancel` | Отменить поставку |
-| `ozon_fbo_supply_items` | `fbo-supply-items` | Товары поставки |
-| `ozon_fbo_supply_shipments` | — | Отгрузки поставки |
-| `ozon_fbo_warehouse_workload` | — | Загруженность склада |
+- [Архитектура](#архитектура)
+- [Доступные действия](#доступные-действия-111)
+- [MCP-сервер](#mcp-сервер)
+  - [Установка](#установка)
+  - [Подключение к Claude Code](#подключение-к-claude-code)
+  - [Подключение к Claude Desktop](#подключение-к-claude-desktop)
+  - [Подключение через --mcp-config](#подключение-через---mcp-config)
+  - [Примеры](#примеры-mcp)
+- [CLI-утилита](#cli-утилита)
+  - [Установка](#установка-cli)
+  - [Использование](#использование-cli)
+  - [Примеры команд](#примеры-команд)
+- [Pydantic-модели](#pydantic-модели)
+  - [Установка](#установка-библиотеки)
+  - [Использование в своих программах](#использование-в-своих-программах)
+- [Переменные окружения](#переменные-окружения)
+- [Разработка](#разработка)
+- [Лицензия](#лицензия)
 
-### Категории
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_category_tree` | `categories` | Дерево категорий |
-| `ozon_category_attributes` | `category-attributes` | Атрибуты категории |
-| `ozon_category_attribute_values` | `category-values` | Значения словаря |
-| `ozon_category_attribute_values_search` | `category-values-search` | Поиск по словарю |
+## Архитектура
 
-### Финансы
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_finance_transactions` | `finance-transactions` | Финансовые транзакции |
-| `ozon_finance_totals` | `finance-totals` | Итоги по транзакциям |
-| `ozon_finance_cash_flow` | `finance-cash-flow` | Движение денежных средств |
-| `ozon_finance_realization` | `finance-realization` | Отчёт о реализации |
+Сервер использует паттерн **search + execute** — вместо 111 отдельных инструментов предоставляет 3:
 
-### Аналитика
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_analytics_data` | `analytics` | Аналитические данные |
-| `ozon_analytics_stock_on_warehouses` | `analytics-stock` | Остатки на складах |
-| `ozon_analytics_item_turnover` | `analytics-turnover` | Оборачиваемость |
+| Инструмент | Описание |
+|------------|----------|
+| `ozon_search` | Поиск действий по описанию на естественном языке |
+| `ozon_execute` | Выполнение действия по ID |
+| `ozon_execute_file` | Выполнение действия со скачиванием файла |
 
-### Склады
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_warehouse_list` | `warehouses` | Склады продавца |
-| `ozon_warehouse_delivery_methods` | `delivery-methods` | Способы доставки |
+### Как это работает
 
-### Возвраты
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_returns_fbo` | `returns-fbo` | Возвраты FBO |
-| `ozon_returns_fbs` | `returns-fbs` | Возвраты FBS |
-| `ozon_return_get` | `return-get` | Детали возврата |
-| `ozon_return_rfbs_list` | `returns-rfbs` | Возвраты rFBS |
-| `ozon_return_rfbs_get` | `return-rfbs-get` | Детали возврата rFBS |
-| `ozon_return_rfbs_approve` | `return-rfbs-approve` | Одобрить возврат |
-| `ozon_return_rfbs_reject` | `return-rfbs-reject` | Отклонить возврат |
-| `ozon_return_rfbs_compensate` | — | Компенсация возврата |
+```
+LLM: ozon_search("отменить отправление fbs")
+→ [{"id": "fbs-posting-cancel", "params_schema": {"posting_number": "str", ...}, ...}]
 
-### Чаты
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_chat_list` | `chats` | Список чатов |
-| `ozon_chat_history` | `chat-history` | История чата |
-| `ozon_chat_start` | `chat-start` | Начать чат |
-| `ozon_chat_send_message` | `chat-send` | Отправить сообщение |
-| `ozon_chat_send_file` | — | Отправить файл |
-| `ozon_chat_read` | — | Отметить прочитанным |
-
-### Акции и стратегии
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_promo_available` | `promos` | Доступные акции |
-| `ozon_promo_candidates` | `promo-candidates` | Кандидаты в акцию |
-| `ozon_promo_products` | `promo-products` | Товары в акции |
-| `ozon_promo_products_add` | — | Добавить товары в акцию |
-| `ozon_promo_products_remove` | — | Убрать товары из акции |
-| `ozon_promo_hotsale_list` | `promo-hotsale` | Hot Sale акции |
-| `ozon_strategy_list` | `strategies` | Ценовые стратегии |
-| `ozon_strategy_create` | `strategy-create` | Создать стратегию |
-| `ozon_strategy_update` | — | Обновить стратегию |
-| `ozon_strategy_delete` | `strategy-delete` | Удалить стратегию |
-
-### Рейтинг и качество
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_rating_summary` | `rating` | Рейтинг продавца |
-| `ozon_rating_history` | `rating-history` | История рейтинга |
-| `ozon_quality_rating` | `quality-rating` | Рейтинг качества |
-
-### Отчёты
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_report_create` | `report-create` | Создать отчёт |
-| `ozon_report_info` | `report-info` | Статус отчёта |
-| `ozon_report_list` | `report-list` | Список отчётов |
-| `ozon_report_download` | `report-download` | Скачать отчёт |
-
-### Отзывы
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_reviews_list` | `reviews` | Список отзывов |
-| `ozon_review_info` | `review-info` | Детали отзыва |
-| `ozon_review_count` | — | Количество отзывов |
-| `ozon_review_comment` | `review-comment` | Ответить на отзыв |
-
-### Вопросы
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_questions_list` | `questions` | Список вопросов |
-| `ozon_question_answer` | `question-answer` | Ответить на вопрос |
-| `ozon_question_update` | — | Обновить ответ |
-
-### Отмены
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_cancellation_list` | `cancellations` | Заявки на отмену |
-| `ozon_cancellation_info` | `cancellation-info` | Детали заявки |
-| `ozon_cancellation_approve` | `cancellation-approve` | Одобрить отмену |
-| `ozon_cancellation_reject` | `cancellation-reject` | Отклонить отмену |
-
-### Сертификаты
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_certificate_list` | `certificates` | Список сертификатов |
-| `ozon_certificate_info` | `certificate-info` | Детали сертификата |
-| `ozon_certificate_create` | — | Добавить сертификат |
-| `ozon_certificate_delete` | `certificate-delete` | Удалить сертификат |
-| `ozon_certificate_bind` | — | Привязать к товарам |
-| `ozon_certificate_unbind` | — | Отвязать от товаров |
-
-### Штрихкоды
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_barcode_generate` | `barcode-generate` | Сгенерировать штрихкоды |
-| `ozon_barcode_add` | `barcode-add` | Привязать штрихкод |
-
-### Бренды
-| MCP Tool | CLI | Описание |
-|---|---|---|
-| `ozon_brand_list` | `brands` | Список брендов |
-
-## Установка
-
-### Из PyPI
-
-```bash
-pip install mcp-server-ozon-seller
+LLM: ozon_execute("fbs-posting-cancel", '{"posting_number": "12345678-0001-1", "cancel_reason_id": 352}')
+→ {"result": true}
 ```
 
-### Из исходников
+## Доступные действия (111)
 
-```bash
-git clone https://github.com/dontsovcmc/mcp-server-ozon-seller.git
-cd mcp-server-ozon-seller
-pip install -e ".[test]"
-```
+| Домен | Кол-во | Описание |
+|-------|--------|----------|
+| [`products`](docs/products.md) | 21 | Товары: создание, обновление, цены, остатки, атрибуты |
+| [`fbs`](docs/fbs.md) | 17 | FBS-отправления: списки, отмены, этикетки, акты |
+| [`fbo`](docs/fbo.md) | 9 | FBO: отправления, поставки, склады |
+| [`categories`](docs/categories.md) | 4 | Категории и атрибуты товаров |
+| [`finance`](docs/finance.md) | 4 | Финансы: транзакции, итоги, движение средств |
+| [`analytics`](docs/analytics.md) | 3 | Аналитика: данные, остатки, оборачиваемость |
+| [`warehouses`](docs/warehouses.md) | 2 | Склады и способы доставки |
+| [`returns`](docs/returns.md) | 8 | Возвраты FBO/FBS/rFBS |
+| [`chats`](docs/chats.md) | 6 | Чаты с покупателями |
+| [`promos`](docs/promos.md) | 6 | Акции и промо |
+| [`strategies`](docs/strategies.md) | 4 | Ценовые стратегии |
+| [`rating`](docs/rating.md) | 3 | Рейтинг и качество продавца |
+| [`reports`](docs/reports.md) | 4 | Отчёты |
+| [`reviews`](docs/reviews.md) | 4 | Отзывы покупателей |
+| [`questions`](docs/questions.md) | 3 | Вопросы покупателей |
+| [`cancellations`](docs/cancellations.md) | 4 | Заявки на отмену |
+| [`certificates`](docs/certificates.md) | 6 | Сертификаты |
+| [`barcodes`](docs/barcodes.md) | 2 | Штрихкоды |
+| [`brands`](docs/brands.md) | 1 | Бренды |
 
-## Настройка Claude Code
+---
+
+## MCP-сервер
+
+### Установка
+
+#### Шаг 1. Получить API-ключи
+
+1. Войдите в [Ozon Seller](https://seller.ozon.ru/)
+2. Перейдите в **Настройки** → **API-ключи**
+3. Создайте ключ (Admin)
+4. Скопируйте `Client-Id` и `Api-Key`
+
+#### Шаг 2. Подключить MCP-сервер
+
+### Подключение к Claude Code
+
+**Способ 1: через uvx** (не требует установки пакета)
+
+> Требуется [uv](https://docs.astral.sh/uv/) — если не установлен:
+> ```bash
+> curl -LsSf https://astral.sh/uv/install.sh | sh
+> ```
 
 ```bash
 claude mcp add ozon-seller \
-  -e OZON_CLIENT_ID=your_client_id \
-  -e OZON_API_KEY=your_api_key \
+  -e OZON_CLIENT_ID=ваш_client_id \
+  -e OZON_API_KEY=ваш_api_key \
+  -- uvx mcp-server-ozon-seller
+```
+
+**Способ 2: через pip**
+
+```bash
+pip install mcp-server-ozon-seller
+
+claude mcp add ozon-seller \
+  -e OZON_CLIENT_ID=ваш_client_id \
+  -e OZON_API_KEY=ваш_api_key \
   -- mcp-server-ozon-seller
 ```
 
-Или вручную в `~/.claude/settings.json`:
+Для удаления:
+```bash
+claude mcp remove ozon-seller
+```
 
+### Подключение к Claude Desktop
+
+Добавьте в конфигурационный файл:
+
+| Клиент | ОС | Путь к файлу |
+|--------|----|-------------|
+| Claude Code | все | `~/.claude/settings.json` (секция `mcpServers`) |
+| Claude Desktop | macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Claude Desktop | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Claude Desktop | Linux | `~/.config/Claude/claude_desktop_config.json` |
+
+**Через uvx:**
 ```json
 {
   "mcpServers": {
     "ozon-seller": {
-      "command": "mcp-server-ozon-seller",
+      "command": "uvx",
+      "args": ["mcp-server-ozon-seller"],
       "env": {
-        "OZON_CLIENT_ID": "your_client_id",
-        "OZON_API_KEY": "your_api_key"
+        "OZON_CLIENT_ID": "ваш_client_id",
+        "OZON_API_KEY": "ваш_api_key"
       }
     }
   }
 }
 ```
 
-## CLI
+**Через pip** (после `pip install mcp-server-ozon-seller`):
+```json
+{
+  "mcpServers": {
+    "ozon-seller": {
+      "command": "mcp-server-ozon-seller",
+      "env": {
+        "OZON_CLIENT_ID": "ваш_client_id",
+        "OZON_API_KEY": "ваш_api_key"
+      }
+    }
+  }
+}
+```
 
-Вторая точка входа — команда `ozon-seller-cli`.
+### Подключение через --mcp-config
 
-### Переменные окружения
+Подключает сервер только на время одной сессии Claude, не сохраняя в настройки. Токен хранится в отдельном `.env.mcp` файле, а не в конфиге Claude.
+
+Из JSON-строки:
+```bash
+claude --mcp-config '{"ozon-seller":{"command":"bash","args":["-c","source ~/.env.mcp && exec uvx mcp-server-ozon-seller"]}}'
+```
+
+Из файла:
+```bash
+claude --mcp-config ~/mcp-servers.json
+```
+
+Пример `~/mcp-servers.json`:
+```json
+{
+  "ozon-seller": {
+    "command": "bash",
+    "args": ["-c", "source ~/.env.mcp && exec uvx mcp-server-ozon-seller"]
+  }
+}
+```
+
+Пример `~/.env.mcp`:
+```
+OZON_CLIENT_ID=ваш_client_id
+OZON_API_KEY=ваш_api_key
+```
+
+#### Шаг 3. Проверить
+
+Попросите Claude: *«покажи мои товары на Ozon»* — он вызовет `ozon_search`, затем `ozon_execute`.
+
+### Примеры (MCP)
+
+- «покажи мои товары на Ozon» → `ozon_search("products list")` → `ozon_execute("product-list")`
+- «отмени FBS отправление 12345678-0001-1» → `ozon_execute("fbs-posting-cancel", ...)`
+- «скачай акт приёмки №42» → `ozon_execute_file("fbs-act-pdf", ...)`
+- «какие FBS заказы ещё не собраны?» → `ozon_execute("fbs-postings-list", ...)`
+- «покажи финансовые транзакции за апрель» → `ozon_execute("finance-transactions", ...)`
+
+---
+
+## CLI-утилита
+
+### Установка (CLI)
 
 ```bash
-export OZON_CLIENT_ID=your_client_id
-export OZON_API_KEY=your_api_key
+pip install mcp-server-ozon-seller
+```
+
+Переменные окружения `OZON_CLIENT_ID` и `OZON_API_KEY` должны быть установлены:
+
+```bash
+export OZON_CLIENT_ID=ваш_client_id
+export OZON_API_KEY=ваш_api_key
 ```
 
 Или через файл:
 
 ```bash
-ozon-seller-cli --env .env COMMAND
+ozon-seller-cli --env /path/to/.env <command>
 ```
 
-### Примеры
+Формат файла — `KEY=VALUE`, по одной переменной на строку, `#`-комментарии.
+
+### Использование (CLI)
+
+Без аргументов запускается MCP-сервер, с командой — CLI. Все команды выводят JSON.
+
+```bash
+# Версия
+ozon-seller-cli --version
+
+# Справка
+ozon-seller-cli --help
+ozon-seller-cli <command> --help
+```
+
+### Примеры команд
 
 ```bash
 # Товары
@@ -262,11 +255,9 @@ ozon-seller-cli product-info --offer-id SKU-001
 ozon-seller-cli product-stocks-info
 
 # FBS-отправления
-ozon-seller-cli list                    # несобранные заказы
-ozon-seller-cli labels                  # скачать этикетки
-ozon-seller-cli ship --all              # собрать все
-ozon-seller-cli fbs-list                # с фильтрами
-ozon-seller-cli fbs-cancel-reasons      # причины отмены
+ozon-seller-cli fbs-list
+ozon-seller-cli fbs-cancel-reasons
+ozon-seller-cli fbs-label 12345678-0001-1
 
 # FBO
 ozon-seller-cli fbo-list
@@ -288,14 +279,59 @@ ozon-seller-cli reviews
 ozon-seller-cli brands
 ```
 
+---
+
+## Pydantic-модели
+
+Пакет содержит типизированные Pydantic-модели всех объектов API. Модели можно использовать в своих Python-программах для валидации данных и автодополнения в IDE.
+
+### Установка (библиотеки)
+
+```bash
+pip install mcp-server-ozon-seller
+```
+
+### Использование в своих программах
+
+```python
+from mcp_server_ozon_seller.models import FbsPostingsListParams
+
+# Валидация данных
+params = FbsPostingsListParams.model_validate({
+    "filter_dict": {"status": "awaiting_packaging"},
+    "limit": 50,
+})
+print(params.model_dump_json())
+
+# Создание объекта
+params = FbsPostingsListParams(limit=10)
+print(params.limit)  # type-safe доступ к полям
+```
+
+Все модели используют `extra="allow"` для forward compatibility — неизвестные поля API не вызывают ошибок.
+
+Полный список моделей: [`models.py`](src/mcp_server_ozon_seller/models.py)
+
+---
+
 ## Переменные окружения
 
-| Переменная | Описание |
-|---|---|
-| `OZON_CLIENT_ID` | Client-Id из личного кабинета Ozon Seller |
-| `OZON_API_KEY` | Api-Key из личного кабинета Ozon Seller |
+| Переменная | Обязательная | По умолчанию | Описание |
+|------------|:------------:|:------------:|----------|
+| `OZON_CLIENT_ID` | да | — | Client-Id из личного кабинета Ozon Seller |
+| `OZON_API_KEY` | да | — | Api-Key из личного кабинета Ozon Seller |
+| `OZON_TIMEOUT` | нет | `30` | Таймаут HTTP-запросов к API (секунды) |
+| `OZON_FILE_TIMEOUT` | нет | `60` | Таймаут скачивания файлов (секунды) |
 
-Получить ключи: Ozon Seller -> Настройки -> API-ключи.
+Получить ключи: [Ozon Seller](https://seller.ozon.ru/) → Настройки → API-ключи.
+
+## Разработка
+
+```bash
+pip install -e ".[test]"
+ruff check src/ tests/
+pytest tests/ -v
+```
 
 ## Лицензия
 

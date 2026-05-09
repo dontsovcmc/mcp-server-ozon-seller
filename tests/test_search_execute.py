@@ -2,13 +2,12 @@
 
 import json
 import os
-
-import pytest
 from unittest.mock import patch
 
+import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
-from mcp_server_ozon_seller.server import mcp
 
+from mcp_server_ozon_seller.server import mcp
 
 PATCH = "mcp_server_ozon_seller.ozon_api.OzonSellerAPI"
 
@@ -230,7 +229,8 @@ async def test_execute_file_unsafe_path():
                 "params_json": '{"id": 1}',
             })
             assert r.isError
-            assert "not allowed" in r.content[0].text.lower()
+            text = r.content[0].text.lower()
+            assert "not allowed" in text or "must be under home or temp" in text
 
 
 @pytest.mark.anyio
